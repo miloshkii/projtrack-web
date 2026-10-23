@@ -90,7 +90,7 @@ Keys typed into a form field are ignored, except `Esc`. Shortcuts with Ctrl, Cmd
 node --test
 ```
 
-Tests use Node's built-in runner (Node 22 or newer, no npm dependencies) against `web/localapi.js` with an in-memory store. PBKDF2 iterations are lowered in tests through the `iterations` option of `createApi`.
+Tests use Node's built-in runner (Node 26 or newer, no npm dependencies) against `web/localapi.js` with an in-memory store. PBKDF2 iterations are lowered in tests through the `iterations` option of `createApi`.
 
 Pushing to `main` runs the tests and deploys `web/` to GitHub Pages (`.github/workflows/pages.yml`). Enable Pages with source "GitHub Actions" in the repository settings.
 
