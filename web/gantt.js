@@ -1,5 +1,5 @@
 // Dependency-free SVG Gantt chart. Dates are parsed as local dates, never via UTC.
-import { svgEl as el, svgTitle as withTitle, parseDate, addDays, formatYen } from './dom.js';
+import { svgEl as el, svgTitle as withTitle, parseDate, addDays, formatYen, priorityNote } from './dom.js';
 
 const DAY_MS = 86400000;
 const LABEL_W = 176;
@@ -105,7 +105,7 @@ function renderMilestones(group, project, scale, cy, onSelect) {
     const r = MILESTONE_R;
     const d = `M${cx} ${cy - r} L${cx + r} ${cy} L${cx} ${cy + r} L${cx - r} ${cy} Z`;
     const node = el('path', { d }, 'gantt-milestone' + stateClass(m));
-    withTitle(node, `${m.title} · ${m.due_date}${costNote(m.cost)}`);
+    withTitle(node, `${m.title} · ${m.due_date}${costNote(m.cost)}${priorityNote(m)}`);
     node.addEventListener('click', (e) => {
       e.stopPropagation();
       onSelect(project.id);
@@ -143,7 +143,7 @@ function renderSubRow(svg, project, span, top, index, scale, onSelect) {
   const w = Math.max(MIN_SUB_BAR_W, x2 - x1);
   const group = el('g', { 'data-id': project.id, 'data-milestone-id': m.id }, 'gantt-subrow');
   group.style.cursor = 'pointer';
-  withTitle(group, `${m.title} · ${span.start} → ${span.due}${statusOf(m) === 'todo' ? '' : ` · ${statusOf(m).replace('_', ' ')}`}${costNote(m.cost)}`);
+  withTitle(group, `${m.title} · ${span.start} → ${span.due}${statusOf(m) === 'todo' ? '' : ` · ${statusOf(m).replace('_', ' ')}`}${costNote(m.cost)}${priorityNote(m)}`);
   rowBackground(group, top, SUB_ROW_H, index, scale);
 
   const label = el('text', { x: SUB_INDENT, y: cy, 'dominant-baseline': 'middle' },

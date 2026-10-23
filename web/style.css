@@ -756,3 +756,48 @@ button.topbar-ctl {
     height: auto;
   }
 }
+
+/* Milestone priority marker */
+
+.prio {
+  flex: none;
+  min-width: 3ch;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.prio-low {
+  color: var(--cyan);
+}
+
+.prio-medium {
+  color: var(--orange);
+}
+
+.prio-high {
+  color: var(--today);
+}
+
+.prio-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.prio-btn.prio-none {
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.prio-btn:hover {
+  text-decoration: underline;
+}
+
+.card-title .prio {
+  display: inline-block;
+  min-width: 0;
+}

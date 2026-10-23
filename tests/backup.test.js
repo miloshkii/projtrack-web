@@ -96,3 +96,39 @@ test('demo data loads once and skips existing projects', async () => {
   const again = await app.call('POST', '/demo');
   assert.deepEqual(again.body, { projects: 0, milestones: 0 });
 });
+
+test('priority survives an export and import round trip', async () => {
+  const app = await unlockedApp();
+  const p = await makeProject(app);
+  await makeMilestone(app, p.id, { title: 'hot', priority: 'high' });
+  const backup = (await app.call('GET', '/backup/export')).body;
+  assert.equal(backup.data.milestones[0].priority, 'high');
+  const other = await unlockedApp();
+  assert.equal((await other.call('POST', '/backup/import', backup)).status, 200);
+  await other.call('POST', '/auth/login', { password: PASSWORD });
+  assert.equal((await other.call('GET', '/projects')).body[0].milestones[0].priority, 'high');
+});
+
+test('a backup without priority imports as none and a bad priority is rejected', async () => {
+  const app = await populated();
+  const backup = (await app.call('GET', '/backup/export')).body;
+  for (const m of backup.data.milestones) delete m.priority;
+  assert.equal((await app.call('POST', '/backup/import', structuredClone(backup))).status, 200);
+  await app.call('POST', '/auth/login', { password: PASSWORD });
+  const priorities = (await app.call('GET', '/projects')).body.flatMap((x) => x.milestones.map((m) => m.priority));
+  assert.deepEqual(priorities, ['none', 'none']);
+  backup.data.milestones[0].priority = 'urgent';
+  const res = await app.call('POST', '/backup/import', backup);
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /priority must be one of/);
+});
+
+test('older stored rows without priority read as none and export as none', async () => {
+  const app = await populated();
+  const stored = await app.store.load();
+  for (const m of stored.milestones) delete m.priority;
+  await app.store.save(stored);
+  const m = (await app.call('GET', '/projects')).body[0].milestones[0];
+  assert.equal(m.priority, 'none');
+  assert.equal((await app.call('GET', '/backup/export')).body.data.milestones[0].priority, 'none');
+});

@@ -1,5 +1,5 @@
 // Kanban board: milestones of all projects grouped into global status columns.
-import { h, formatYen } from './dom.js';
+import { h, formatYen, priorityMark, priorityNote } from './dom.js';
 
 export const COLUMNS = [
   { status: 'todo', label: 'todo' },
@@ -36,7 +36,7 @@ export function globalIndex(fullColumn, visibleColumn, visibleIndex, movingId) {
 function cardTooltip(m) {
   const parts = [m.title, m.project.name, `due ${m.due_date}`];
   if (m.cost != null) parts.push(formatYen(m.cost));
-  return parts.join(' · ');
+  return parts.join(' · ') + priorityNote(m);
 }
 
 function renderCard(m, selectedMilestoneId, onSelect) {
@@ -51,6 +51,8 @@ function renderCard(m, selectedMilestoneId, onSelect) {
     style: `border-left-color:${m.project.color}`,
     'data-id': m.id,
   }, h('div', { class: 'card-title' + (m.status === 'done' ? ' done' : ''), text: m.title }), meta);
+  const mark = priorityMark(m);
+  if (mark) card.querySelector('.card-title').prepend(mark, ' ');
   card.addEventListener('click', () => onSelect(m.id, m.project.id));
   return card;
 }

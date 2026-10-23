@@ -2,7 +2,7 @@
 import { renderGantt } from './gantt.js';
 import { renderBoard, groupByStatus, statusOf, COLUMNS } from './board.js';
 import { bindKeys } from './keys.js';
-import { h, todayStr, plusDays, formatYen } from './dom.js';
+import { h, todayStr, plusDays, formatYen, PRIORITIES } from './dom.js';
 import { showAuthView, hideAuthView, validateNewPassword } from './auth.js';
 import { createApi } from './localapi.js';
 import { createIndexedDbStore } from './storage.js';
@@ -184,10 +184,23 @@ function statusPill(m) {
   return pill;
 }
 
+const PRIORITY_CYCLE = { none: 'low', low: 'medium', medium: 'high', high: 'none' };
+const PRIORITY_MARKS = { none: '·', low: '!', medium: '!!', high: '!!!' };
+
+function priorityButton(m) {
+  const priority = m.priority || 'none';
+  const btn = button(PRIORITY_MARKS[priority],
+    () => run(() => api('PATCH', `/milestones/${m.id}`, { priority: PRIORITY_CYCLE[priority] })),
+    `prio prio-btn prio-${priority}`);
+  btn.title = `priority: ${priority} (click to change)`;
+  return btn;
+}
+
 function milestoneItem(m) {
   const isDone = statusOf(m) === 'done';
   return h('li', { class: m.id === state.selectedMilestoneId ? 'selected' : '' },
     statusPill(m),
+    priorityButton(m),
     h('span', { class: isDone ? 'milestone-title done' : 'milestone-title', text: m.title }),
     h('span', { class: 'muted', text: m.start_date ? `${m.start_date} → ${m.due_date}` : m.due_date }),
     costCell(m),
@@ -307,14 +320,16 @@ function milestoneForm(p) {
   const due = h('input', { name: 'due_date', type: 'date' });
   due.value = p.target_date;
   const cost = h('input', { name: 'cost', type: 'number', min: '0', step: '1' });
+  const priority = h('select', { name: 'priority' }, ...PRIORITIES.map((p) => h('option', { value: p, text: p })));
   const err = errorBox();
   const form = h('form', { class: 'milestone-form', novalidate: '' },
     field('milestone', title), field('start date (optional)', start), field('due date', due),
-    field('cost (¥, optional)', cost), err,
+    field('cost (¥, optional)', cost), field('priority', priority), err,
     h('div', { class: 'form-actions' }, button('Add', null, '', 'submit'), button('Cancel', cancelForm)));
   onSubmit(form, err, async () => {
     await api('POST', `/projects/${p.id}/milestones`, {
       title: title.value, start_date: start.value || null, due_date: due.value, cost: parseCost(cost.value),
+      priority: priority.value,
     });
     state.mode = 'view';
     await refresh();

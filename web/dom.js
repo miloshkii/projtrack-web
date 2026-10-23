@@ -46,3 +46,14 @@ export const todayStr = () => formatDate(new Date());
 export const plusDays = (n) => formatDate(addDays(new Date(), n));
 
 export const formatYen = (amount) => `¥${yenNumber.format(amount)}`;
+
+export const PRIORITIES = ['none', 'low', 'medium', 'high'];
+const PRIORITY_MARKS = { low: '!', medium: '!!', high: '!!!' };
+
+// Small marker for a milestone's priority; null when there is none.
+export function priorityMark(m) {
+  const mark = PRIORITY_MARKS[m.priority];
+  return mark ? h('span', { class: `prio prio-${m.priority}`, text: mark, title: `priority: ${m.priority}` }) : null;
+}
+
+export const priorityNote = (m) => (m.priority && m.priority !== 'none' ? ` · ${m.priority} priority` : '');

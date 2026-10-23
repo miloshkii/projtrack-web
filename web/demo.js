@@ -1,4 +1,10 @@
 // Sample projects for "load demo data". Dates are days from today.
+export const SAMPLE_PRIORITIES = {
+  'AWS Solutions Architect Associate|Sit exam': 'high',
+  'AWS Solutions Architect Associate|Practice exam 2': 'medium',
+  'CKA - Kubernetes Admin|Build lab cluster': 'low',
+};
+
 export const SAMPLE_COSTS = {
   'AWS Solutions Architect Associate|Practice exam 1': 3300,
   'AWS Solutions Architect Associate|Sit exam': 20000,

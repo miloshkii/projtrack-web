@@ -111,3 +111,34 @@ test('costs are stored encrypted and sum per project', async () => {
   const totals = (await app.call('GET', '/projects')).body.map((x) => x.cost_total);
   assert.deepEqual(totals, [3500, 7]);
 });
+
+test('priority defaults to none and accepts each level', async () => {
+  const app = await unlockedApp();
+  const p = await makeProject(app);
+  assert.equal((await makeMilestone(app, p.id)).priority, 'none');
+  for (const level of ['none', 'low', 'medium', 'high']) {
+    assert.equal((await makeMilestone(app, p.id, { priority: level })).priority, level);
+  }
+});
+
+for (const bad of ['urgent', 'HIGH', 3, null, true]) {
+  test(`priority ${JSON.stringify(bad)} is rejected on create and patch`, async () => {
+    const app = await unlockedApp();
+    const p = await makeProject(app);
+    const res = await app.call('POST', `/projects/${p.id}/milestones`, { title: 'M', due_date: '2026-03-01', priority: bad });
+    assert.deepEqual([res.status, res.body.error], [400, 'priority must be one of: none, low, medium, high']);
+    const m = await makeMilestone(app, p.id);
+    const patched = await app.call('PATCH', `/milestones/${m.id}`, { priority: bad });
+    assert.deepEqual([patched.status, patched.body.error], [400, 'priority must be one of: none, low, medium, high']);
+  });
+}
+
+test('patch changes priority and keeps it when not sent', async () => {
+  const app = await unlockedApp();
+  const p = await makeProject(app);
+  const m = await makeMilestone(app, p.id, { priority: 'low' });
+  assert.equal((await app.call('PATCH', `/milestones/${m.id}`, { title: 'Renamed' })).body.priority, 'low');
+  assert.equal((await app.call('PATCH', `/milestones/${m.id}`, { priority: 'high' })).body.priority, 'high');
+  const listed = (await app.call('GET', `/projects/${p.id}`)).body.milestones[0];
+  assert.equal(listed.priority, 'high');
+});

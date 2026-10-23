@@ -13,6 +13,7 @@ projtrack is a tracker for small projects such as certification study plans. Eac
 - Gantt timeline with expandable milestone sub-bars that show each milestone's span. In-progress milestones are yellow.
 - On the timeline, each project bar fills up to its latest done milestone's marker. The detail pane shows progress as milestones done out of total (for example 2/5), with a bar to match.
 - Milestone status (todo, doing or done) is set with the status pill in the detail pane. It replaces the old done checkbox.
+- Milestone priority (none, low, medium or high) is set in the add form and shown as a small `!`, `!!` or `!!!` marker on board cards and in the detail pane. Click the marker in the detail pane to change it.
 - Kanban board with todo, in progress and done columns of milestones from all projects, a project filter, drag and drop, and fullscreen.
 
 ## Use it

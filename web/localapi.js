@@ -3,11 +3,12 @@
 import {
   DEFAULT_ITERATIONS, InvalidToken, checkPassword, decryptInt, deriveKey, encryptInt, hashPassword, newSalt, parseHash,
 } from './cryptoutil.js';
-import { SAMPLE_COSTS, SAMPLE_PROJECTS } from './demo.js';
+import { SAMPLE_COSTS, SAMPLE_PRIORITIES, SAMPLE_PROJECTS } from './demo.js';
 import { emptyDatabase } from './storage.js';
 
 const STATUSES = new Set(['planned', 'active', 'paused', 'done']);
 const MILESTONE_STATUSES = ['todo', 'in_progress', 'done'];
+const PRIORITIES = ['none', 'low', 'medium', 'high'];
 const MAX_COST = 10 ** 12;
 const MIN_PASSWORD_LENGTH = 8;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -60,6 +61,13 @@ function validStatus(value) {
 function validMilestoneStatus(value) {
   if (typeof value !== 'string' || !MILESTONE_STATUSES.includes(value)) {
     throw new ValidationError('status must be one of: ' + MILESTONE_STATUSES.join(', '));
+  }
+  return value;
+}
+
+function validPriority(value) {
+  if (typeof value !== 'string' || !PRIORITIES.includes(value)) {
+    throw new ValidationError('priority must be one of: ' + PRIORITIES.join(', '));
   }
   return value;
 }
@@ -188,7 +196,7 @@ export function createApi({
 
   async function milestoneJson(row) {
     const { cost_enc: token, ...rest } = row;
-    const out = { ...rest, done: row.status === 'done', cost: null };
+    const out = { ...rest, priority: row.priority ?? 'none', done: row.status === 'done', cost: null };
     if (token !== null) {
       try {
         out.cost = await decryptInt(key, token);
@@ -274,9 +282,10 @@ export function createApi({
     validateMilestoneDates(start, due);
     const status = milestoneStatusFrom(data, 'todo');
     const cost = validCost(data.cost);
+    const priority = has(data, 'priority') ? validPriority(data.priority) : 'none';
     const row = {
       id: ++db.seq.milestones, project_id: projectId, title, start_date: start, due_date: due,
-      status, position: nextPosition(db, status), cost_enc: await encryptCost(cost),
+      status, priority, position: nextPosition(db, status), cost_enc: await encryptCost(cost),
     };
     db.milestones.push(row);
     ctx.dirty = true;
@@ -293,11 +302,12 @@ export function createApi({
     const start = has(data, 'start_date') ? validOptionalDate(data.start_date, 'start_date') : row.start_date;
     validateMilestoneDates(start, due);
     const status = milestoneStatusFrom(data, row.status);
+    const priority = has(data, 'priority') ? validPriority(data.priority) : row.priority ?? 'none';
     const cost = has(data, 'cost') ? validCost(data.cost) : null;
     const costToken = has(data, 'cost') ? await encryptCost(cost) : undefined;
     if (status !== row.status) placeInColumn(db, row, status, Infinity);
     if (costToken !== undefined) row.cost_enc = costToken;
-    Object.assign(row, { title, start_date: start, due_date: due });
+    Object.assign(row, { title, start_date: start, due_date: due, priority });
     ctx.dirty = true;
     return reply(200, await milestoneJson(row));
   }
@@ -415,7 +425,8 @@ export function createApi({
   // ---- backup ----
 
   async function exportBackup(ctx) {
-    const { projects, milestones, settings, seq } = ctx.db;
+    const { projects, settings, seq } = ctx.db;
+    const milestones = ctx.db.milestones.map((m) => ({ ...m, priority: m.priority ?? 'none' }));
     return reply(200, {
       format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now().toISOString(),
       data: { projects, milestones, settings, seq },
@@ -452,6 +463,8 @@ export function createApi({
         const body = { title, start_date: start === null ? null : offsetDate(start), due_date: offsetDate(due), status };
         const cost = SAMPLE_COSTS[`${spec.name}|${title}`];
         if (cost !== undefined) body.cost = cost;
+        const priority = SAMPLE_PRIORITIES[`${spec.name}|${title}`];
+        if (priority !== undefined) body.priority = priority;
         await execute('POST', `/projects/${created.body.id}/milestones`, body);
         milestones += 1;
       }
@@ -567,7 +580,8 @@ export function validateBackup(file) {
       if (raw.cost_enc !== null && typeof raw.cost_enc !== 'string') throw backupError('cost_enc must be text or null');
       db.milestones.push({
         id, project_id: raw.project_id, title: validText(raw.title, 'title'), start_date: start, due_date: due,
-        status: validMilestoneStatus(raw.status), position: validPosition(raw.position), cost_enc: raw.cost_enc,
+        status: validMilestoneStatus(raw.status),
+        priority: has(raw, 'priority') ? validPriority(raw.priority) : 'none', position: validPosition(raw.position), cost_enc: raw.cost_enc,
       });
     }
     const settings = data.settings ?? {};
