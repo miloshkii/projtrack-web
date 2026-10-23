@@ -24,33 +24,14 @@ test('milestones sort by due_date then id inside a project', async () => {
   assert.deepEqual(titles, ['a', 'c', 'b']);
 });
 
-test('progress fills to the latest done milestone on the timeline', async () => {
-  const app = await unlockedApp();
-  const p = await makeProject(app, { start_date: '2026-01-01', target_date: '2026-01-11' });
-  const progress = async () => (await app.call('GET', `/projects/${p.id}`)).body.progress;
-  const early = await makeMilestone(app, p.id, { due_date: '2026-01-03' });
-  const late = await makeMilestone(app, p.id, { due_date: '2026-01-09' });
-  await makeMilestone(app, p.id, { due_date: '2026-01-11' });
-  assert.equal(await progress(), 0);
-  await app.call('PATCH', `/milestones/${late.id}`, { status: 'done' });
-  assert.equal(await progress(), 80);
-  await app.call('PATCH', `/milestones/${early.id}`, { status: 'done' });
-  assert.equal(await progress(), 80);
-});
-
-test('progress stays at the last milestone even when every milestone is done', async () => {
-  const app = await unlockedApp();
-  const p = await makeProject(app, { start_date: '2026-01-01', target_date: '2026-01-11' });
-  await makeMilestone(app, p.id, { status: 'done', due_date: '2026-01-06' });
-  assert.equal((await app.call('GET', `/projects/${p.id}`)).body.progress, 50);
-});
-
-test('progress clamps milestones outside the project dates', async () => {
+test('progress is the share of milestones done, rounding half to even', async () => {
   const app = await unlockedApp();
   const p = await makeProject(app);
-  await makeMilestone(app, p.id, { status: 'done', due_date: '2025-12-01' });
-  await makeMilestone(app, p.id);
-  assert.equal((await app.call('GET', `/projects/${p.id}`)).body.progress, 0);
+  await makeMilestone(app, p.id, { status: 'done' });
+  for (let i = 0; i < 7; i++) await makeMilestone(app, p.id);
+  assert.equal((await app.call('GET', `/projects/${p.id}`)).body.progress, 12);
+  await makeMilestone(app, p.id, { status: 'done' });
+  assert.equal((await app.call('GET', `/projects/${p.id}`)).body.progress, 22);
 });
 
 const invalid = [

@@ -168,12 +168,12 @@ function renderRow(svg, project, top, index, scale, { selectedId, onSelect, onTo
   const x1 = scale.x(parseDate(project.start_date));
   const x2 = scale.x(parseDate(project.target_date));
   const barW = Math.max(3, x2 - x1);
-  const progress = Math.min(100, Math.max(0, project.progress || 0));
+  const doneCount = (project.milestones || []).filter((m) => statusOf(m) === 'done').length;
   const hasMilestones = (project.milestones || []).length > 0;
 
   const group = el('g', { 'data-id': project.id }, `gantt-row status-${project.status}`);
   group.style.cursor = 'pointer';
-  withTitle(group, `${project.name} · ${project.start_date} → ${project.target_date} · ${progress}%${project.cost_total ? costNote(project.cost_total) : ''}`);
+  withTitle(group, `${project.name} · ${project.start_date} → ${project.target_date} · ${doneCount}/${(project.milestones || []).length} done${project.cost_total ? costNote(project.cost_total) : ''}`);
   rowBackground(group, top, ROW_H, index, scale);
 
   // dimmed content only; the toggle and background stay at full strength

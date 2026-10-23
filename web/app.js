@@ -138,6 +138,11 @@ function emptyDetail() {
     button('load demo data', loadDemoData));
 }
 
+function milestoneCount(p) {
+  const done = p.milestones.filter((m) => statusOf(m) === 'done').length;
+  return `${done}/${p.milestones.length}`;
+}
+
 function projectView(p) {
   const root = h('div');
   root.append(
@@ -151,7 +156,7 @@ function projectView(p) {
   if (p.description) root.append(h('p', { text: p.description }));
   root.append(h('div', { class: 'progress-row' },
     h('div', { class: 'progress' }, h('span', { style: `width:${p.progress}%` })),
-    h('span', { text: `${p.progress}%` })));
+    h('span', { text: milestoneCount(p) })));
 
   if (actionError) root.append(h('div', { class: 'form-error', role: 'alert', text: actionError }));
   actionError = '';
