@@ -38,11 +38,11 @@ test('progress fills to the latest done milestone on the timeline', async () => 
   assert.equal(await progress(), 80);
 });
 
-test('progress is full once every milestone is done', async () => {
+test('progress stays at the last milestone even when every milestone is done', async () => {
   const app = await unlockedApp();
-  const p = await makeProject(app);
-  await makeMilestone(app, p.id, { status: 'done', due_date: '2026-02-01' });
-  assert.equal((await app.call('GET', `/projects/${p.id}`)).body.progress, 100);
+  const p = await makeProject(app, { start_date: '2026-01-01', target_date: '2026-01-11' });
+  await makeMilestone(app, p.id, { status: 'done', due_date: '2026-01-06' });
+  assert.equal((await app.call('GET', `/projects/${p.id}`)).body.progress, 50);
 });
 
 test('progress clamps milestones outside the project dates', async () => {

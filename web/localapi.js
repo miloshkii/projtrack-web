@@ -132,7 +132,6 @@ const dayNumber = (iso) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso
 function timelineProgress(project, milestones) {
   const done = milestones.filter((m) => m.status === 'done');
   if (!done.length) return 0;
-  if (done.length === milestones.length) return 100;
   const reached = dayNumber(done.map((m) => m.due_date).sort().at(-1));
   const start = dayNumber(project.start_date);
   const span = dayNumber(project.target_date) - start;

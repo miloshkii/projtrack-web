@@ -93,6 +93,12 @@ function truncate(name, max = 20) {
   return name.length > max ? name.slice(0, max - 1) + '…' : name;
 }
 
+// The progress fill ends exactly on the latest done milestone's marker.
+function latestDoneX(project, scale) {
+  const doneDates = (project.milestones || []).filter((m) => statusOf(m) === 'done').map((m) => m.due_date);
+  return doneDates.length ? scale.x(parseDate(doneDates.sort().at(-1))) : null;
+}
+
 function renderMilestones(group, project, scale, cy, onSelect) {
   for (const m of project.milestones || []) {
     const cx = scale.x(parseDate(m.due_date));
@@ -184,8 +190,9 @@ function renderRow(svg, project, top, index, scale, { selectedId, onSelect, onTo
     selected ? 'gantt-bar selected' : 'gantt-bar');
   bar.style.fill = project.color;
   if (!selected) bar.style.stroke = project.color;
-  const pw = Math.max(0, ((barW - 2) * progress) / 100);
-  const prog = el('rect', { x: x1 + 1, y: by + 1, width: pw, height: BAR_H - 2, rx: 1 }, 'gantt-progress');
+  const reachedX = latestDoneX(project, scale);
+  const pw = reachedX === null ? 0 : Math.min(Math.max(reachedX, x1), x2) - x1;
+  const prog = el('rect', { x: x1, y: by + 1, width: pw, height: BAR_H - 2, rx: 1 }, 'gantt-progress');
   prog.style.fill = project.color;
   content.append(bar, prog);
 
