@@ -11,6 +11,7 @@ const MILESTONE_STATUSES = ['todo', 'in_progress', 'done'];
 const PRIORITIES = ['none', 'low', 'medium', 'high'];
 const MAX_TAG_LENGTH = 30;
 const MAX_TAGS = 10;
+const MAX_NOTES_LENGTH = 250;
 const MAX_COST = 10 ** 12;
 const MIN_PASSWORD_LENGTH = 8;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -72,6 +73,13 @@ function validPriority(value) {
     throw new ValidationError('priority must be one of: ' + PRIORITIES.join(', '));
   }
   return value;
+}
+
+function validNotes(value) {
+  if (typeof value !== 'string') throw new ValidationError('notes must be a string');
+  const notes = value.trimEnd();
+  if (codePoints(notes) > MAX_NOTES_LENGTH) throw new ValidationError(`notes must be at most ${MAX_NOTES_LENGTH} characters`);
+  return notes;
 }
 
 function validBool(value, field) {
@@ -251,7 +259,7 @@ export function createApi({
 
   async function milestoneJson(row) {
     const { cost_enc: token, ...rest } = row;
-    const out = { ...rest, priority: row.priority ?? 'none', done: row.status === 'done', cost: null };
+    const out = { ...rest, priority: row.priority ?? 'none', notes: row.notes ?? '', done: row.status === 'done', cost: null };
     if (token !== null) {
       try {
         out.cost = await decryptInt(key, token);
@@ -341,9 +349,10 @@ export function createApi({
     const status = milestoneStatusFrom(data, 'todo');
     const cost = validCost(data.cost);
     const priority = has(data, 'priority') ? validPriority(data.priority) : 'none';
+    const notes = has(data, 'notes') ? validNotes(data.notes) : '';
     const row = {
       id: ++db.seq.milestones, project_id: projectId, title, start_date: start, due_date: due,
-      status, priority, position: nextPosition(db, status),
+      status, priority, notes, position: nextPosition(db, status),
       order: db.milestones.filter((m) => m.project_id === projectId).length, cost_enc: await encryptCost(cost),
     };
     db.milestones.push(row);
@@ -362,13 +371,14 @@ export function createApi({
     validateMilestoneDates(start, due);
     const status = milestoneStatusFrom(data, row.status);
     const priority = has(data, 'priority') ? validPriority(data.priority) : row.priority ?? 'none';
+    const notes = has(data, 'notes') ? validNotes(data.notes) : row.notes ?? '';
     const projectId = has(data, 'project_id') ? validProjectId(db, data.project_id) : row.project_id;
     const order = has(data, 'order') ? validPosition(data.order, 'order') : null;
     const cost = has(data, 'cost') ? validCost(data.cost) : null;
     const costToken = has(data, 'cost') ? await encryptCost(cost) : undefined;
     if (status !== row.status) placeInColumn(db, row, status, Infinity);
     if (costToken !== undefined) row.cost_enc = costToken;
-    Object.assign(row, { title, start_date: start, due_date: due, priority });
+    Object.assign(row, { title, start_date: start, due_date: due, priority, notes });
     if (projectId !== row.project_id || order !== null) {
       const sameProject = projectId === row.project_id;
       placeInProject(db, row, projectId, order ?? (sameProject ? row.order : Infinity));
@@ -502,7 +512,7 @@ export function createApi({
   async function exportBackup(ctx) {
     const { settings, seq } = ctx.db;
     const projects = ctx.db.projects.map((p) => ({ ...p, tags: p.tags ?? [] }));
-    const milestones = ctx.db.milestones.map((m) => ({ ...m, priority: m.priority ?? 'none' }));
+    const milestones = ctx.db.milestones.map((m) => ({ ...m, priority: m.priority ?? 'none', notes: m.notes ?? '' }));
     return reply(200, {
       format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now().toISOString(),
       data: { projects, milestones, settings, seq },
@@ -660,6 +670,7 @@ export function validateBackup(file) {
         id, project_id: raw.project_id, title: validText(raw.title, 'title'), start_date: start, due_date: due,
         status: validMilestoneStatus(raw.status),
         priority: has(raw, 'priority') ? validPriority(raw.priority) : 'none', position: validPosition(raw.position), cost_enc: raw.cost_enc,
+        notes: has(raw, 'notes') ? validNotes(raw.notes) : '',
         ...(has(raw, 'order') ? { order: validPosition(raw.order, 'order') } : {}),
       });
     }

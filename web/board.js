@@ -1,5 +1,5 @@
 // Kanban board: milestones of all projects grouped into global status columns.
-import { h, formatYen, priorityMark, priorityNote } from './dom.js';
+import { h, formatYen, priorityMark, priorityNote, notesPreview, NOTES_GLYPH } from './dom.js';
 
 export const COLUMNS = [
   { status: 'todo', label: 'todo' },
@@ -37,7 +37,8 @@ export function globalIndex(fullColumn, visibleColumn, visibleIndex, movingId) {
 function cardTooltip(m) {
   const parts = [m.title, m.project.name, `due ${m.due_date}`];
   if (m.cost != null) parts.push(formatYen(m.cost));
-  return parts.join(' · ') + priorityNote(m);
+  const tip = parts.join(' · ') + priorityNote(m);
+  return m.notes ? `${tip}\n${notesPreview(m.notes)}` : tip;
 }
 
 function renderCard(m, selectedMilestoneId, onSelect, onEdit) {
@@ -45,6 +46,7 @@ function renderCard(m, selectedMilestoneId, onSelect, onEdit) {
     h('span', { class: 'muted', text: m.project.name }),
     h('span', { class: 'muted', text: m.due_date }));
   if (m.cost != null && !m.cost_locked) meta.append(h('span', { class: 'muted', text: formatYen(m.cost) }));
+  if (m.notes) meta.append(h('span', { class: 'muted notes-glyph', text: NOTES_GLYPH, title: 'has notes' }));
   const card = h('div', {
     class: 'card' + (m.id === selectedMilestoneId ? ' selected' : ''),
     draggable: 'true',

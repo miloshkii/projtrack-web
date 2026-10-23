@@ -831,3 +831,95 @@ button.topbar-ctl {
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
+
+/* Milestone notes */
+
+.notes-btn,
+.notes-glyph {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.notes-btn {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.notes-btn:hover,
+.notes-btn[aria-expanded="true"] {
+  color: var(--accent);
+}
+
+.notes-counter {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  text-align: right;
+}
+
+.notes-counter.over {
+  color: var(--today);
+}
+
+.milestone-list li:has(> .milestone-notes) {
+  flex-wrap: wrap;
+}
+
+.milestone-notes {
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  padding: 4px 8px 4px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: auto;
+  overflow-wrap: anywhere;
+}
+
+.notes-md p,
+.notes-md ul,
+.notes-md ol {
+  margin: 0 0 4px;
+}
+
+.notes-md ul,
+.notes-md ol {
+  padding-left: 18px;
+}
+
+.notes-md > :last-child {
+  margin-bottom: 0;
+}
+
+.notes-md strong {
+  color: var(--fg);
+}
+
+.notes-md a {
+  color: var(--accent);
+}
+
+.notes-md code {
+  padding: 0 3px;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.milestone-notes .notes-md li {
+  display: list-item;
+  padding: 0;
+}
+
+.milestone-notes .notes-md ul {
+  list-style: disc;
+}
+
+.milestone-notes .notes-md ol {
+  list-style: decimal;
+}

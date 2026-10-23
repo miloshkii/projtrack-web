@@ -277,3 +277,44 @@ test('backup import rejects a bad order', async () => {
   backup.data.milestones[0].order = -2;
   assert.equal((await app.call('POST', '/backup/import', backup)).status, 400);
 });
+
+test('notes default to empty, are trimmed at the end and can be set on create', async () => {
+  const app = await unlockedApp();
+  const p = await makeProject(app);
+  assert.equal((await makeMilestone(app, p.id)).notes, '');
+  const m = await makeMilestone(app, p.id, { notes: '  **hi**\nthere \n\n' });
+  assert.equal(m.notes, '  **hi**\nthere');
+});
+
+test('notes are limited to 250 code points and must be strings', async () => {
+  const app = await unlockedApp();
+  const p = await makeProject(app);
+  const path = `/projects/${p.id}/milestones`;
+  const ok = await app.call('POST', path, { title: 'a', due_date: '2026-03-01', notes: '😀'.repeat(250) });
+  assert.equal(ok.status, 201);
+  for (const notes of ['x'.repeat(251), '😀'.repeat(251)]) {
+    const res = await app.call('POST', path, { title: 'b', due_date: '2026-03-01', notes });
+    assert.deepEqual([res.status, res.body.error], [400, 'notes must be at most 250 characters']);
+  }
+  for (const notes of [5, null, ['a']]) {
+    const res = await app.call('POST', path, { title: 'b', due_date: '2026-03-01', notes });
+    assert.deepEqual([res.status, res.body.error], [400, 'notes must be a string']);
+  }
+  const bad = await app.call('PATCH', `/milestones/${ok.body.id}`, { notes: 'x'.repeat(251) });
+  assert.equal(bad.status, 400);
+  assert.equal((await app.call('PATCH', `/milestones/${ok.body.id}`, { notes: 1 })).body.error, 'notes must be a string');
+});
+
+test('PATCH keeps notes when not sent and clears them with an empty string', async () => {
+  const app = await unlockedApp();
+  const p = await makeProject(app);
+  const m = await makeMilestone(app, p.id, { notes: 'remember' });
+  const renamed = await app.call('PATCH', `/milestones/${m.id}`, { title: 'new' });
+  assert.equal(renamed.body.notes, 'remember');
+  const changed = await app.call('PATCH', `/milestones/${m.id}`, { notes: '- a\n- b  ' });
+  assert.equal(changed.body.notes, '- a\n- b');
+  const cleared = await app.call('PATCH', `/milestones/${m.id}`, { notes: '' });
+  assert.equal(cleared.body.notes, '');
+  const listed = (await app.call('GET', `/projects/${p.id}`)).body.milestones[0];
+  assert.equal(listed.notes, '');
+});

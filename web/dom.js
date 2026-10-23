@@ -66,4 +66,14 @@ export function tagChips(tags) {
 
 export const tagNote = (project) => (project.tags && project.tags.length ? ` · tags: ${project.tags.join(', ')}` : '');
 
+export const MAX_NOTES_LENGTH = 250;
+export const NOTES_GLYPH = '≡';
+
+// Notes as one line of plain text, cut to `max` characters, for tooltips.
+export function notesPreview(notes, max = 120) {
+  const flat = (notes || '').replace(/\s+/g, ' ').trim();
+  const chars = [...flat];
+  return chars.length > max ? chars.slice(0, max - 1).join('') + '…' : flat;
+}
+
 export const parseTags = (text) => text.split(',');

@@ -2,7 +2,8 @@
 import { renderGantt } from './gantt.js';
 import { renderBoard, groupByStatus, statusOf, COLUMNS } from './board.js';
 import { bindKeys } from './keys.js';
-import { h, todayStr, plusDays, formatYen, PRIORITIES, tagChips, parseTags } from './dom.js';
+import { h, todayStr, plusDays, formatYen, PRIORITIES, tagChips, parseTags, MAX_NOTES_LENGTH, NOTES_GLYPH } from './dom.js';
+import { renderMarkdown } from './markdown.js';
 import { showAuthView, hideAuthView, validateNewPassword } from './auth.js';
 import { createApi } from './localapi.js';
 import { createIndexedDbStore } from './storage.js';
@@ -38,6 +39,7 @@ const state = {
   projects: [], selectedId: null, mode: 'view', expandedIds: new Set(),
   view: 'timeline', fullscreen: false, boardFilter: null, selectedMilestoneId: null,
   tags: [], tagFilter: null, editingMilestoneId: null,
+  notesOpen: new Set(),
 };
 const STATUS_CYCLE = { todo: 'in_progress', in_progress: 'done', done: 'todo' };
 const MILESTONE_STATUSES = Object.keys(STATUS_CYCLE);
@@ -70,8 +72,8 @@ function button(text, onclick, cls = '', type = 'button') {
   return h('button', { type, class: cls, text, onclick });
 }
 
-function field(label, input) {
-  return h('div', { class: 'field' }, h('label', { text: label }), input);
+function field(label, input, ...extra) {
+  return h('div', { class: 'field' }, h('label', { text: label }), input, ...extra);
 }
 
 // ---- rendering ----
@@ -290,8 +292,43 @@ function milestoneItem(m) {
     costCell(m),
     editButton(m),
     button('✕', () => run(() => api('DELETE', `/milestones/${m.id}`)), 'btn-x', 'button'));
-  li.addEventListener('click', (e) => { if (!e.target.closest('button, input')) selectRow(li, m.id); });
+  if (m.notes) {
+    li.querySelector('.milestone-title').after(notesButton(li, m));
+    if (state.notesOpen.has(m.id)) li.append(notesPanel(m));
+  }
+  li.addEventListener('click', (e) => {
+    if (e.target.closest('button, input, a')) return;
+    selectRow(li, m.id);
+    if (m.notes) setNotesOpen(li, m, true);
+  });
   return li;
+}
+
+function notesPanel(m) {
+  const panel = h('div', { class: 'milestone-notes' });
+  panel.append(renderMarkdown(m.notes));
+  return panel;
+}
+
+function setNotesOpen(li, m, open) {
+  const panel = li.querySelector(':scope > .milestone-notes');
+  if (open) {
+    state.notesOpen.add(m.id);
+    if (!panel) li.append(notesPanel(m));
+  } else {
+    state.notesOpen.delete(m.id);
+    panel?.remove();
+  }
+  li.querySelector('.notes-btn')?.setAttribute('aria-expanded', String(open));
+}
+
+function notesButton(li, m) {
+  const open = state.notesOpen.has(m.id);
+  const btn = button(NOTES_GLYPH, null, 'notes-btn', 'button');
+  btn.title = 'notes (click to show or hide)';
+  btn.setAttribute('aria-expanded', String(open));
+  btn.addEventListener('click', () => setNotesOpen(li, m, !state.notesOpen.has(m.id)));
+  return btn;
 }
 
 // Empty -> null; otherwise a non-negative whole number of yen.
@@ -412,6 +449,14 @@ function milestoneForm(p, m = null) {
   const start = h('input', { name: 'start_date', type: 'date' });
   const due = h('input', { name: 'due_date', type: 'date' });
   const cost = h('input', { name: 'cost', type: 'number', min: '0', step: '1' });
+  const notes = h('textarea', { name: 'notes', maxlength: String(MAX_NOTES_LENGTH), rows: '3' });
+  const counter = h('span', { class: 'notes-counter muted' });
+  const updateCounter = () => {
+    const used = [...notes.value].length;
+    counter.textContent = `${used}/${MAX_NOTES_LENGTH}`;
+    counter.classList.toggle('over', used > MAX_NOTES_LENGTH);
+  };
+  notes.addEventListener('input', updateCounter);
   const priority = h('select', { name: 'priority' }, ...PRIORITIES.map((v) => h('option', { value: v, text: v })));
   const status = h('select', { name: 'status' }, ...MILESTONE_STATUSES.map((v) => h('option', { value: v, text: v.replace('_', ' ') })));
   const project = h('select', { name: 'project_id' },
@@ -425,16 +470,19 @@ function milestoneForm(p, m = null) {
     due.value = m.due_date;
     cost.value = m.cost == null ? '' : m.cost;
     priority.value = m.priority || 'none';
+    notes.value = m.notes || '';
     status.value = statusOf(m);
     if (m.cost_locked) {
       cost.placeholder = 'locked: enter a value to replace';
       cost.title = LOCKED_HINT;
     }
   }
+  updateCounter();
   const err = errorBox();
   const form = h('form', { class: 'milestone-form', novalidate: '' },
     field('milestone', title), field('start date (optional)', start), field('due date', due),
-    field('cost (¥, optional)', cost), field('priority', priority));
+    field('cost (¥, optional)', cost), field('priority', priority),
+    field('notes (optional, markdown)', notes, counter));
   if (!isNew) form.append(field('status', status), field('project', project));
   form.append(err,
     h('div', { class: 'form-actions' }, button(isNew ? 'Add' : 'Save', null, '', 'submit'), button('Cancel', cancelForm)));
@@ -443,12 +491,12 @@ function milestoneForm(p, m = null) {
     if (isNew) {
       await api('POST', `/projects/${p.id}/milestones`, {
         title: title.value, start_date: start.value || null, due_date: due.value, cost: parseCost(cost.value),
-        priority: priority.value,
+        priority: priority.value, notes: notes.value,
       });
     } else {
       const changes = milestoneChanges(m, {
         title: title.value, start_date: start.value || null, due_date: due.value,
-        priority: priority.value, status: status.value, costText: cost.value, project_id: Number(project.value),
+        priority: priority.value, notes: notes.value.trimEnd(), status: status.value, costText: cost.value, project_id: Number(project.value),
       });
       if (Object.keys(changes).length) {
         const saved = await api('PATCH', `/milestones/${m.id}`, changes);
@@ -466,8 +514,8 @@ function milestoneForm(p, m = null) {
 // changed only when something is typed, so it is never overwritten by accident.
 function milestoneChanges(m, values) {
   const changes = {};
-  for (const key of ['title', 'start_date', 'due_date', 'priority']) {
-    if (values[key] !== (m[key] ?? (key === 'start_date' ? null : undefined))) changes[key] = values[key];
+  for (const key of ['title', 'start_date', 'due_date', 'priority', 'notes']) {
+    if (values[key] !== (m[key] ?? (key === 'start_date' ? null : key === 'notes' ? '' : undefined))) changes[key] = values[key];
   }
   if (values.status !== statusOf(m)) changes.status = values.status;
   if (values.project_id !== m.project_id) changes.project_id = values.project_id;
@@ -612,6 +660,7 @@ function selectMilestone(milestoneId, projectId) {
   // Keep the DOM when nothing changes so a double-click lands on a live card.
   if (state.selectedMilestoneId === milestoneId && state.selectedId === projectId && state.mode === 'view') return;
   state.selectedMilestoneId = milestoneId;
+  state.notesOpen.add(milestoneId);
   state.selectedId = projectId;
   state.mode = 'view';
   render();

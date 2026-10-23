@@ -132,3 +132,38 @@ test('older stored rows without priority read as none and export as none', async
   assert.equal(m.priority, 'none');
   assert.equal((await app.call('GET', '/backup/export')).body.data.milestones[0].priority, 'none');
 });
+
+test('notes survive an export and import round trip', async () => {
+  const app = await unlockedApp();
+  const p = await makeProject(app);
+  await makeMilestone(app, p.id, { title: 'n', notes: '**keep** me' });
+  const file = (await app.call('GET', '/backup/export')).body;
+  assert.equal(file.data.milestones[0].notes, '**keep** me');
+  const other = await unlockedApp();
+  assert.equal((await other.call('POST', '/backup/import', file)).status, 200);
+  await other.call('POST', '/auth/login', { password: PASSWORD });
+  const projects = (await other.call('GET', '/projects')).body;
+  assert.equal(projects[0].milestones[0].notes, '**keep** me');
+});
+
+test('backups and stored rows without notes read as empty; invalid notes are rejected on import', async () => {
+  const app = await unlockedApp();
+  const p = await makeProject(app);
+  await makeMilestone(app, p.id, { notes: 'x' });
+  const file = (await app.call('GET', '/backup/export')).body;
+  delete file.data.milestones[0].notes;
+  const other = await unlockedApp();
+  assert.equal((await other.call('POST', '/backup/import', file)).status, 200);
+  await other.call('POST', '/auth/login', { password: PASSWORD });
+  assert.equal((await other.call('GET', '/projects')).body[0].milestones[0].notes, '');
+  const exported = (await other.call('GET', '/backup/export')).body;
+  assert.equal(exported.data.milestones[0].notes, '');
+
+  for (const [notes, message] of [[7, 'notes must be a string'], ['x'.repeat(251), 'notes must be at most 250 characters']]) {
+    const bad = structuredClone(exported);
+    bad.data.milestones[0].notes = notes;
+    const res = await (await unlockedApp()).call('POST', '/backup/import', bad);
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, new RegExp(`^invalid backup: ${message}`));
+  }
+});
