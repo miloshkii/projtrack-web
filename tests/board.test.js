@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { column, makeMilestone, makeProject, unlockedApp } from './helpers.js';
+import { groupByStatus } from '../web/board.js';
 
 async function board() {
   const app = await unlockedApp();
@@ -93,4 +94,19 @@ test('ties in position fall back to id order', async () => {
   await app.store.save(data);
   await move(app, ids.d, 'todo', 1);
   assert.deepEqual(await column(app, 'todo'), ['a', 'd', 'b', 'c']);
+});
+
+test('groupByStatus filters by tag and combines with the project filter', () => {
+  const ms = (id) => [{ id, title: `m${id}`, status: 'todo', position: id }];
+  const projects = [
+    { id: 1, name: 'A', color: '#1', tags: ['work'], milestones: ms(1) },
+    { id: 2, name: 'B', color: '#2', tags: ['work', 'home'], milestones: ms(2) },
+    { id: 3, name: 'C', color: '#3', tags: [], milestones: ms(3) },
+  ];
+  const ids = (groups) => groups.todo.map((m) => m.id);
+  assert.deepEqual(ids(groupByStatus(projects, null, 'work')), [1, 2]);
+  assert.deepEqual(ids(groupByStatus(projects, null, 'home')), [2]);
+  assert.deepEqual(ids(groupByStatus(projects, 1, 'home')), []);
+  assert.deepEqual(ids(groupByStatus(projects, 2, 'work')), [2]);
+  assert.deepEqual(ids(groupByStatus(projects)), [1, 2, 3]);
 });

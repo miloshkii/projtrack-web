@@ -57,3 +57,13 @@ export function priorityMark(m) {
 }
 
 export const priorityNote = (m) => (m.priority && m.priority !== 'none' ? ` · ${m.priority} priority` : '');
+
+// Small chips for a project's tags; null when it has none.
+export function tagChips(tags) {
+  if (!tags || !tags.length) return null;
+  return h('div', { class: 'tag-chips' }, ...tags.map((t) => h('span', { class: 'tag-chip', text: t })));
+}
+
+export const tagNote = (project) => (project.tags && project.tags.length ? ` · tags: ${project.tags.join(', ')}` : '');
+
+export const parseTags = (text) => text.split(',');

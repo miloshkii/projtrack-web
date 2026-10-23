@@ -2,7 +2,7 @@
 import { renderGantt } from './gantt.js';
 import { renderBoard, groupByStatus, statusOf, COLUMNS } from './board.js';
 import { bindKeys } from './keys.js';
-import { h, todayStr, plusDays, formatYen, PRIORITIES } from './dom.js';
+import { h, todayStr, plusDays, formatYen, PRIORITIES, tagChips, parseTags } from './dom.js';
 import { showAuthView, hideAuthView, validateNewPassword } from './auth.js';
 import { createApi } from './localapi.js';
 import { createIndexedDbStore } from './storage.js';
@@ -37,6 +37,7 @@ async function api(method, path, body) {
 const state = {
   projects: [], selectedId: null, mode: 'view', expandedIds: new Set(),
   view: 'timeline', fullscreen: false, boardFilter: null, selectedMilestoneId: null,
+  tags: [], tagFilter: null,
 };
 const STATUS_CYCLE = { todo: 'in_progress', in_progress: 'done', done: 'todo' };
 const PILL_LABELS = { todo: 'todo', in_progress: 'doing', done: 'done' };
@@ -50,6 +51,7 @@ let actionError = '';
 const timelineEl = document.getElementById('timeline');
 const timelinePaneEl = document.getElementById('timeline-pane');
 const filterEl = document.getElementById('board-filter');
+const tagFilterEl = document.getElementById('tag-filter');
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const tabEls = document.querySelectorAll('.pane-tabs [data-view]');
 const detailEl = document.getElementById('detail');
@@ -73,8 +75,12 @@ function field(label, input) {
 
 // ---- rendering ----
 
+const visibleProjects = () => (state.tagFilter == null
+  ? state.projects
+  : state.projects.filter((p) => p.tags.includes(state.tagFilter)));
+
 function renderTimeline() {
-  renderGantt(timelineEl, state.projects, {
+  renderGantt(timelineEl, visibleProjects(), {
     selectedId: state.selectedId,
     onSelect: selectProject,
     onToggle: toggleExpand,
@@ -86,6 +92,7 @@ function renderTimeline() {
 function renderBoardView() {
   renderBoard(timelineEl, state.projects, {
     filterProjectId: state.boardFilter,
+    filterTag: state.tagFilter,
     selectedMilestoneId: state.selectedMilestoneId,
     onSelect: selectMilestone,
     onMove: moveMilestone,
@@ -104,6 +111,11 @@ function renderPaneHeader() {
     h('option', { value: '', text: 'all projects' }),
     ...state.projects.map((p) => h('option', { value: p.id, text: p.name })));
   filterEl.value = state.boardFilter == null ? '' : String(state.boardFilter);
+  tagFilterEl.hidden = state.tags.length === 0;
+  tagFilterEl.replaceChildren(
+    h('option', { value: '', text: 'all tags' }),
+    ...state.tags.map((t) => h('option', { value: t, text: t })));
+  tagFilterEl.value = state.tagFilter ?? '';
   fullscreenBtn.textContent = state.fullscreen ? '[x]' : '[ ]';
   fullscreenBtn.setAttribute('aria-pressed', String(state.fullscreen));
   tilesEl.classList.toggle('fullscreen', state.fullscreen);
@@ -153,6 +165,8 @@ function projectView(p) {
     h('div', { class: 'detail-cost' }, h('span', { class: 'muted', text: 'cost ' }),
       h('span', { text: formatYen(p.cost_total || 0) })),
   );
+  const chips = tagChips(p.tags);
+  if (chips) root.append(chips);
   if (p.description) root.append(h('p', { text: p.description }));
   root.append(h('div', { class: 'progress-row' },
     h('div', { class: 'progress' }, h('span', { style: `width:${p.progress}%` })),
@@ -272,12 +286,15 @@ function projectForm(p) {
   const target = h('input', { name: 'target_date', type: 'date' });
   const status = h('select', { name: 'status' }, ...STATUSES.map((s) => h('option', { value: s, text: s })));
   const color = h('input', { name: 'color', type: 'hidden' });
+  const tags = h('input', { name: 'tags', list: 'tag-suggestions', autocomplete: 'off', placeholder: 'comma separated' });
+  const suggestions = h('datalist', { id: 'tag-suggestions' }, ...state.tags.map((t) => h('option', { value: t })));
 
   name.value = isNew ? '' : p.name;
   desc.value = isNew ? '' : p.description;
   start.value = isNew ? todayStr() : p.start_date;
   target.value = isNew ? plusDays(DEFAULT_TARGET_DAYS) : p.target_date;
   status.value = isNew ? 'active' : p.status;
+  tags.value = isNew ? '' : p.tags.join(', ');
   color.value = isNew ? colors[0] : p.color;
 
   const swatches = h('div', { class: 'swatches' });
@@ -297,13 +314,14 @@ function projectForm(p) {
   const form = h('form', { class: 'project-form', novalidate: '' },
     field('name', name), field('description', desc),
     field('start date', start), field('target date', target),
-    field('status', status), field('color', swatches), color, err,
+    field('status', status), field('tags', tags), suggestions, field('color', swatches), color, err,
     h('div', { class: 'form-actions' }, button('Save', null, '', 'submit'), button('Cancel', cancelForm)));
 
   onSubmit(form, err, async () => {
     const body = {
       name: name.value, description: desc.value, start_date: start.value,
       target_date: target.value, status: status.value, color: color.value,
+      tags: parseTags(tags.value),
     };
     const saved = isNew ? await api('POST', '/projects', body) : await api('PATCH', `/projects/${p.id}`, body);
     state.selectedId = saved.id;
@@ -443,6 +461,8 @@ function startChangePassword() {
 
 async function refresh() {
   state.projects = await api('GET', '/projects');
+  state.tags = await api('GET', '/tags');
+  if (state.tagFilter != null && !state.tags.includes(state.tagFilter)) state.tagFilter = null;
   if (!allMilestones().some((m) => m.id === state.selectedMilestoneId)) state.selectedMilestoneId = null;
   if (state.boardFilter != null && !state.projects.some((p) => p.id === state.boardFilter)) state.boardFilter = null;
   if (!selected()) {
@@ -508,7 +528,7 @@ const exitFullscreen = () => { if (state.fullscreen) setFullscreen(false); };
 
 // ---- board keyboard ----
 
-const boardColumns = () => groupByStatus(state.projects, state.boardFilter);
+const boardColumns = () => groupByStatus(state.projects, state.boardFilter, state.tagFilter);
 
 function selectCardBy(offset) {
   const groups = boardColumns();
@@ -549,7 +569,7 @@ function toggleExpand(id = state.selectedId) {
 }
 
 function selectBy(offset) {
-  const ps = state.projects;
+  const ps = visibleProjects();
   if (!ps.length) return;
   const i = ps.findIndex((p) => p.id === state.selectedId);
   const next = i === -1 ? (offset > 0 ? 0 : ps.length - 1) : Math.min(ps.length - 1, Math.max(0, i + offset));
@@ -623,6 +643,10 @@ onUnauthorized = () => lockUi('session expired, unlock again');
 tabEls.forEach((t) => t.addEventListener('click', () => setView(t.dataset.view)));
 filterEl.addEventListener('change', () => {
   state.boardFilter = filterEl.value === '' ? null : Number(filterEl.value);
+  render();
+});
+tagFilterEl.addEventListener('change', () => {
+  state.tagFilter = tagFilterEl.value === '' ? null : tagFilterEl.value;
   render();
 });
 fullscreenBtn.addEventListener('click', toggleFullscreen);

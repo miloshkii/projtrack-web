@@ -1,5 +1,5 @@
 // Dependency-free SVG Gantt chart. Dates are parsed as local dates, never via UTC.
-import { svgEl as el, svgTitle as withTitle, parseDate, addDays, formatYen, priorityNote } from './dom.js';
+import { svgEl as el, svgTitle as withTitle, parseDate, addDays, formatYen, priorityNote, tagNote } from './dom.js';
 
 const DAY_MS = 86400000;
 const LABEL_W = 176;
@@ -173,7 +173,7 @@ function renderRow(svg, project, top, index, scale, { selectedId, onSelect, onTo
 
   const group = el('g', { 'data-id': project.id }, `gantt-row status-${project.status}`);
   group.style.cursor = 'pointer';
-  withTitle(group, `${project.name} · ${project.start_date} → ${project.target_date} · ${doneCount}/${(project.milestones || []).length} done${project.cost_total ? costNote(project.cost_total) : ''}`);
+  withTitle(group, `${project.name} · ${project.start_date} → ${project.target_date} · ${doneCount}/${(project.milestones || []).length} done${project.cost_total ? costNote(project.cost_total) : ''}${tagNote(project)}`);
   rowBackground(group, top, ROW_H, index, scale);
 
   // dimmed content only; the toggle and background stay at full strength

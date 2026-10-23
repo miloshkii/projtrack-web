@@ -9,6 +9,8 @@ import { emptyDatabase } from './storage.js';
 const STATUSES = new Set(['planned', 'active', 'paused', 'done']);
 const MILESTONE_STATUSES = ['todo', 'in_progress', 'done'];
 const PRIORITIES = ['none', 'low', 'medium', 'high'];
+const MAX_TAG_LENGTH = 30;
+const MAX_TAGS = 10;
 const MAX_COST = 10 ** 12;
 const MIN_PASSWORD_LENGTH = 8;
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -94,6 +96,19 @@ function validColor(value) {
   return value;
 }
 
+// Trimmed, whitespace-collapsed, lowercased, deduplicated (first one wins), empties dropped.
+function validTags(value) {
+  if (!Array.isArray(value) || value.some((t) => typeof t !== 'string')) {
+    throw new ValidationError('tags must be a list of strings');
+  }
+  const tags = [...new Set(value.map((t) => t.trim().replace(/\s+/g, ' ').toLowerCase()).filter(Boolean))];
+  if (tags.some((t) => codePoints(t) > MAX_TAG_LENGTH)) {
+    throw new ValidationError(`each tag must be at most ${MAX_TAG_LENGTH} characters`);
+  }
+  if (tags.length > MAX_TAGS) throw new ValidationError(`a project can have at most ${MAX_TAGS} tags`);
+  return tags;
+}
+
 function validateProject(fields) {
   const clean = {
     name: validText(fields.name, 'name'),
@@ -102,6 +117,7 @@ function validateProject(fields) {
     target_date: validDate(fields.target_date, 'target_date'),
     status: validStatus(has(fields, 'status') ? fields.status : 'active'),
     color: validColor(has(fields, 'color') ? fields.color : '#7aa2f7'),
+    tags: has(fields, 'tags') ? validTags(fields.tags) : [],
   };
   if (typeof clean.description !== 'string') throw new ValidationError('description must be a string');
   if (clean.target_date < clean.start_date) throw new ValidationError('target_date must not be before start_date');
@@ -214,6 +230,7 @@ export function createApi({
     const done = milestones.filter((m) => m.status === 'done').length;
     return {
       ...row,
+      tags: row.tags ?? [],
       milestones,
       cost_total: milestones.reduce((sum, m) => sum + (m.cost || 0), 0),
       progress: milestones.length ? roundHalfEven((100 * done) / milestones.length) : 0,
@@ -254,7 +271,7 @@ export function createApi({
     const row = ctx.db.projects.find((p) => p.id === id);
     if (!row) return notFound('Project');
     const data = jsonObject(ctx.body);
-    const editable = ['name', 'description', 'start_date', 'target_date', 'status', 'color'];
+    const editable = ['name', 'description', 'start_date', 'target_date', 'status', 'color', 'tags'];
     const merged = Object.fromEntries(editable.map((k) => [k, has(data, k) ? data[k] : row[k]]));
     Object.assign(row, validateProject(merged));
     ctx.dirty = true;
@@ -269,6 +286,8 @@ export function createApi({
     ctx.dirty = true;
     return reply(204);
   }
+
+  const listTags = async (ctx) => reply(200, [...new Set(ctx.db.projects.flatMap((p) => p.tags ?? []))].sort());
 
   // ---- milestones ----
 
@@ -425,7 +444,8 @@ export function createApi({
   // ---- backup ----
 
   async function exportBackup(ctx) {
-    const { projects, settings, seq } = ctx.db;
+    const { settings, seq } = ctx.db;
+    const projects = ctx.db.projects.map((p) => ({ ...p, tags: p.tags ?? [] }));
     const milestones = ctx.db.milestones.map((m) => ({ ...m, priority: m.priority ?? 'none' }));
     return reply(200, {
       format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now().toISOString(),
@@ -476,6 +496,7 @@ export function createApi({
 
   const ROUTES = [
     ['GET', /^\/projects$/, listProjects],
+    ['GET', /^\/tags$/, listTags],
     ['POST', /^\/projects$/, createProject],
     ['GET', /^\/projects\/(\d+)$/, getProject],
     ['PATCH', /^\/projects\/(\d+)$/, updateProject],

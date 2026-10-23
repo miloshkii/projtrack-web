@@ -10,10 +10,11 @@ export const COLUMNS = [
 export const statusOf = (m) => m.status || (m.done ? 'done' : 'todo');
 
 // Every milestone with its project attached, grouped by status and sorted by position.
-export function groupByStatus(projects, filterProjectId = null) {
+export function groupByStatus(projects, filterProjectId = null, filterTag = null) {
   const groups = Object.fromEntries(COLUMNS.map((c) => [c.status, []]));
   for (const p of projects) {
     if (filterProjectId != null && p.id !== filterProjectId) continue;
+    if (filterTag != null && !(p.tags || []).includes(filterTag)) continue;
     for (const m of p.milestones || []) {
       const status = statusOf(m);
       if (groups[status]) groups[status].push({ ...m, status, project: { id: p.id, name: p.name, color: p.color } });
@@ -113,9 +114,9 @@ function renderColumn({ status, label }, groups, fullGroups, opts, drag) {
 }
 
 export function renderBoard(container, projects, {
-  filterProjectId = null, selectedMilestoneId = null, onSelect = () => {}, onMove = () => {},
+  filterProjectId = null, filterTag = null, selectedMilestoneId = null, onSelect = () => {}, onMove = () => {},
 } = {}) {
-  const groups = groupByStatus(projects, filterProjectId);
+  const groups = groupByStatus(projects, filterProjectId, filterTag);
   const fullGroups = groupByStatus(projects);
   const drag = { id: null };
   const board = h('div', { class: 'board' });
