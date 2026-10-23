@@ -37,9 +37,10 @@ async function api(method, path, body) {
 const state = {
   projects: [], selectedId: null, mode: 'view', expandedIds: new Set(),
   view: 'timeline', fullscreen: false, boardFilter: null, selectedMilestoneId: null,
-  tags: [], tagFilter: null,
+  tags: [], tagFilter: null, editingMilestoneId: null,
 };
 const STATUS_CYCLE = { todo: 'in_progress', in_progress: 'done', done: 'todo' };
+const MILESTONE_STATUSES = Object.keys(STATUS_CYCLE);
 const PILL_LABELS = { todo: 'todo', in_progress: 'doing', done: 'done' };
 const authEl = document.getElementById('auth-view');
 const tilesEl = document.querySelector('.tiles');
@@ -95,6 +96,7 @@ function renderBoardView() {
     filterTag: state.tagFilter,
     selectedMilestoneId: state.selectedMilestoneId,
     onSelect: selectMilestone,
+    onEdit: editMilestoneFromBoard,
     onMove: moveMilestone,
   });
 }
@@ -177,11 +179,15 @@ function projectView(p) {
 
   const list = h('ul', { class: 'milestone-list' });
   for (const m of p.milestones) list.append(milestoneItem(m));
+  wireListReorder(list);
   root.append(list);
   if (!p.milestones.length) root.append(h('div', { class: 'muted', text: 'no milestones yet' }));
 
+  const editing = state.mode === 'edit-milestone' && p.milestones.find((m) => m.id === state.editingMilestoneId);
   if (state.mode === 'new-milestone') {
     root.append(milestoneForm(p));
+  } else if (editing) {
+    root.append(milestoneForm(p, editing));
   } else {
     root.append(h('div', { class: 'detail-actions' },
       button('edit', startEditProject),
@@ -210,15 +216,82 @@ function priorityButton(m) {
   return btn;
 }
 
+function editButton(m) {
+  const btn = button('✎', () => startEditMilestone(m.id), 'btn-x btn-edit');
+  btn.title = 'edit milestone (e)';
+  btn.setAttribute('aria-label', `edit ${m.title}`);
+  return btn;
+}
+
+// Rows are dragged to a new place; the drop index is among the other rows.
+function wireListReorder(list) {
+  let dragId = null;
+  const dropIndex = (clientY) => {
+    const rows = [...list.querySelectorAll('li:not(.dragging)')];
+    const i = rows.findIndex((r) => {
+      const box = r.getBoundingClientRect();
+      return clientY < box.top + box.height / 2;
+    });
+    return { rows, index: i === -1 ? rows.length : i };
+  };
+  const clearMarks = () => list.querySelectorAll('.drop-before, .drop-after')
+    .forEach((r) => r.classList.remove('drop-before', 'drop-after'));
+  list.addEventListener('dragstart', (e) => {
+    const row = e.target.closest?.('li');
+    if (!row) return;
+    dragId = Number(row.dataset.id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragId);
+    requestAnimationFrame(() => row.classList.add('dragging'));
+  });
+  list.addEventListener('dragover', (e) => {
+    if (dragId == null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    clearMarks();
+    const { rows, index } = dropIndex(e.clientY);
+    if (index < rows.length) rows[index].classList.add('drop-before');
+    else rows.at(-1)?.classList.add('drop-after');
+  });
+  list.addEventListener('drop', (e) => {
+    if (dragId == null) return;
+    e.preventDefault();
+    const id = dragId;
+    dragId = null;
+    clearMarks();
+    reorderMilestone(id, dropIndex(e.clientY).index);
+  });
+  list.addEventListener('dragend', () => {
+    dragId = null;
+    clearMarks();
+    list.querySelectorAll('.dragging').forEach((r) => r.classList.remove('dragging'));
+  });
+}
+
+// Selecting a row must not rebuild the detail pane, or a double-click on its title would be lost.
+function selectRow(li, id) {
+  if (state.selectedMilestoneId === id) return;
+  state.selectedMilestoneId = id;
+  li.parentElement.querySelectorAll('li.selected').forEach((r) => r.classList.remove('selected'));
+  li.classList.add('selected');
+  renderLeftPane();
+}
+
 function milestoneItem(m) {
   const isDone = statusOf(m) === 'done';
-  return h('li', { class: m.id === state.selectedMilestoneId ? 'selected' : '' },
+  const li = h('li', { class: m.id === state.selectedMilestoneId ? 'selected' : '', draggable: 'true', 'data-id': m.id },
     statusPill(m),
     priorityButton(m),
-    h('span', { class: isDone ? 'milestone-title done' : 'milestone-title', text: m.title }),
+    h('span', {
+      class: isDone ? 'milestone-title done' : 'milestone-title', text: m.title,
+      title: 'double-click to edit', ondblclick: () => startEditMilestone(m.id),
+    }),
     h('span', { class: 'muted', text: m.start_date ? `${m.start_date} → ${m.due_date}` : m.due_date }),
     costCell(m),
+    editButton(m),
     button('✕', () => run(() => api('DELETE', `/milestones/${m.id}`)), 'btn-x', 'button'));
+  li.addEventListener('click', (e) => { if (!e.target.closest('button, input')) selectRow(li, m.id); });
+  return li;
 }
 
 // Empty -> null; otherwise a non-negative whole number of yen.
@@ -332,28 +405,75 @@ function projectForm(p) {
   return form;
 }
 
-function milestoneForm(p) {
+// Add form when `m` is null; otherwise edits `m` and sends only the changed fields.
+function milestoneForm(p, m = null) {
+  const isNew = !m;
   const title = h('input', { name: 'title' });
   const start = h('input', { name: 'start_date', type: 'date' });
   const due = h('input', { name: 'due_date', type: 'date' });
-  due.value = p.target_date;
   const cost = h('input', { name: 'cost', type: 'number', min: '0', step: '1' });
-  const priority = h('select', { name: 'priority' }, ...PRIORITIES.map((p) => h('option', { value: p, text: p })));
+  const priority = h('select', { name: 'priority' }, ...PRIORITIES.map((v) => h('option', { value: v, text: v })));
+  const status = h('select', { name: 'status' }, ...MILESTONE_STATUSES.map((v) => h('option', { value: v, text: v.replace('_', ' ') })));
+  const project = h('select', { name: 'project_id' },
+    ...state.projects.map((v) => h('option', { value: v.id, text: v.name })));
+  project.value = p.id;
+  if (isNew) {
+    due.value = p.target_date;
+  } else {
+    title.value = m.title;
+    start.value = m.start_date || '';
+    due.value = m.due_date;
+    cost.value = m.cost == null ? '' : m.cost;
+    priority.value = m.priority || 'none';
+    status.value = statusOf(m);
+    if (m.cost_locked) {
+      cost.placeholder = 'locked: enter a value to replace';
+      cost.title = LOCKED_HINT;
+    }
+  }
   const err = errorBox();
   const form = h('form', { class: 'milestone-form', novalidate: '' },
     field('milestone', title), field('start date (optional)', start), field('due date', due),
-    field('cost (¥, optional)', cost), field('priority', priority), err,
-    h('div', { class: 'form-actions' }, button('Add', null, '', 'submit'), button('Cancel', cancelForm)));
+    field('cost (¥, optional)', cost), field('priority', priority));
+  if (!isNew) form.append(field('status', status), field('project', project));
+  form.append(err,
+    h('div', { class: 'form-actions' }, button(isNew ? 'Add' : 'Save', null, '', 'submit'), button('Cancel', cancelForm)));
+
   onSubmit(form, err, async () => {
-    await api('POST', `/projects/${p.id}/milestones`, {
-      title: title.value, start_date: start.value || null, due_date: due.value, cost: parseCost(cost.value),
-      priority: priority.value,
-    });
+    if (isNew) {
+      await api('POST', `/projects/${p.id}/milestones`, {
+        title: title.value, start_date: start.value || null, due_date: due.value, cost: parseCost(cost.value),
+        priority: priority.value,
+      });
+    } else {
+      const changes = milestoneChanges(m, {
+        title: title.value, start_date: start.value || null, due_date: due.value,
+        priority: priority.value, status: status.value, costText: cost.value, project_id: Number(project.value),
+      });
+      if (Object.keys(changes).length) {
+        const saved = await api('PATCH', `/milestones/${m.id}`, changes);
+        state.selectedId = saved.project_id;
+      }
+    }
     state.mode = 'view';
     await refresh();
   });
   queueMicrotask(() => title.focus());
   return form;
+}
+
+// Only the fields whose form value differs from the milestone. A locked cost counts as
+// changed only when something is typed, so it is never overwritten by accident.
+function milestoneChanges(m, values) {
+  const changes = {};
+  for (const key of ['title', 'start_date', 'due_date', 'priority']) {
+    if (values[key] !== (m[key] ?? (key === 'start_date' ? null : undefined))) changes[key] = values[key];
+  }
+  if (values.status !== statusOf(m)) changes.status = values.status;
+  if (values.project_id !== m.project_id) changes.project_id = values.project_id;
+  const costTouched = m.cost_locked ? values.costText.trim() !== '' : parseCost(values.costText) !== m.cost;
+  if (costTouched) changes.cost = parseCost(values.costText);
+  return changes;
 }
 
 function passwordForm() {
@@ -489,6 +609,8 @@ const loadDemoData = () => run(() => api('POST', '/demo'));
 const allMilestones = () => state.projects.flatMap((p) => p.milestones || []);
 
 function selectMilestone(milestoneId, projectId) {
+  // Keep the DOM when nothing changes so a double-click lands on a live card.
+  if (state.selectedMilestoneId === milestoneId && state.selectedId === projectId && state.mode === 'view') return;
   state.selectedMilestoneId = milestoneId;
   state.selectedId = projectId;
   state.mode = 'view';
@@ -498,6 +620,22 @@ function selectMilestone(milestoneId, projectId) {
 function setMilestoneStatus(m, status) {
   return run(() => api('PATCH', `/milestones/${m.id}`, { status }));
 }
+
+function reorderMilestone(id, order) {
+  return run(() => api('POST', `/milestones/${id}/reorder`, { order }));
+}
+
+// Shift+J / Shift+K: move the selected milestone down / up in its project's list.
+function moveSelectedMilestoneBy(offset) {
+  const list = selected()?.milestones ?? [];
+  const i = list.findIndex((m) => m.id === state.selectedMilestoneId);
+  const target = i + offset;
+  if (i === -1 || target < 0 || target >= list.length) return;
+  reorderMilestone(list[i].id, target);
+}
+
+const moveMilestoneDown = () => moveSelectedMilestoneBy(1);
+const moveMilestoneUp = () => moveSelectedMilestoneBy(-1);
 
 function moveMilestone(id, status, position) {
   return run(() => api('POST', `/milestones/${id}/move`, { status, position }));
@@ -590,6 +728,24 @@ function startEditProject() {
   renderDetail();
 }
 
+function startEditMilestone(id) {
+  if (!selected()?.milestones.some((m) => m.id === id)) return;
+  state.editingMilestoneId = id;
+  state.mode = 'edit-milestone';
+  renderDetail();
+}
+
+// With a milestone selected `e` edits it, otherwise the project.
+function startEdit() {
+  if (state.selectedMilestoneId != null) startEditMilestone(state.selectedMilestoneId);
+  else startEditProject();
+}
+
+function editMilestoneFromBoard(milestoneId, projectId) {
+  selectMilestone(milestoneId, projectId);
+  startEditMilestone(milestoneId);
+}
+
 function startNewMilestone() {
   if (!selected()) return;
   state.mode = 'new-milestone';
@@ -622,7 +778,7 @@ function toggleNextMilestone() {
 
 export const actions = {
   selectNext, selectPrev, startNewProject, startNewMilestone,
-  startEditProject, deleteSelected, toggleExpand, cancelForm, toggleNextMilestone, refresh,
+  startEditProject, startEdit, moveMilestoneUp, moveMilestoneDown, deleteSelected, toggleExpand, cancelForm, toggleNextMilestone, refresh,
   showTimeline, showBoard, toggleFullscreen, exitFullscreen, moveCardLeft, moveCardRight,
   lock, isLocked: () => locked,
 };

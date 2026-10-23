@@ -521,6 +521,15 @@ svg.gantt {
   color: var(--today);
 }
 
+.milestone-list .btn-edit {
+  color: var(--accent);
+}
+
+.milestone-list li { cursor: grab; }
+.milestone-list li.dragging { opacity: 0.4; }
+.milestone-list li.drop-before { box-shadow: 0 -2px 0 var(--accent); }
+.milestone-list li.drop-after { box-shadow: 0 2px 0 var(--accent); }
+
 .milestone-form {
   margin-top: 10px;
   padding-top: 8px;

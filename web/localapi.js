@@ -86,8 +86,15 @@ function milestoneStatusFrom(data, fallback) {
   return fallback;
 }
 
-function validPosition(value) {
-  if (!Number.isInteger(value) || value < 0) throw new ValidationError('position must be a non-negative integer');
+function validPosition(value, field = 'position') {
+  if (!Number.isInteger(value) || value < 0) throw new ValidationError(`${field} must be a non-negative integer`);
+  return value;
+}
+
+function validProjectId(db, value) {
+  if (!Number.isInteger(value) || !db.projects.some((p) => p.id === value)) {
+    throw new ValidationError('project_id must refer to an existing project');
+  }
   return value;
 }
 
@@ -187,6 +194,37 @@ function placeInColumn(db, milestone, newStatus, position) {
   if (oldStatus !== newStatus) renumberColumn(db, oldStatus);
 }
 
+// ---- manual order inside a project (separate from the board position) ----
+
+const byOrderThenId = (a, b) => a.order - b.order || a.id - b.id;
+const hasOrder = (m) => Number.isInteger(m.order);
+
+const projectRows = (db, projectId, excludingId = null) =>
+  db.milestones.filter((m) => m.project_id === projectId && m.id !== excludingId).sort(byOrderThenId);
+
+// Rows without an order (old data and backups) follow the ordered ones by due date, then id.
+function ensureOrder(db) {
+  for (const p of db.projects) {
+    const rows = db.milestones.filter((m) => m.project_id === p.id);
+    if (rows.every(hasOrder)) continue;
+    const ordered = rows.filter(hasOrder).sort(byOrderThenId);
+    const unordered = rows.filter((m) => !hasOrder(m)).sort(byDueThenId);
+    [...ordered, ...unordered].forEach((m, index) => { m.order = index; });
+  }
+}
+
+const renumberProject = (db, projectId) => projectRows(db, projectId).forEach((m, index) => { m.order = index; });
+
+// Insert the milestone at `order` (clamped) in the project, then renumber both projects.
+function placeInProject(db, milestone, projectId, order) {
+  const oldProjectId = milestone.project_id;
+  const rows = projectRows(db, projectId, milestone.id);
+  rows.splice(Math.min(order, rows.length), 0, milestone);
+  milestone.project_id = projectId;
+  rows.forEach((m, index) => { m.order = index; });
+  if (oldProjectId !== projectId) renumberProject(db, oldProjectId);
+}
+
 // ---- the api ----
 
 export function createApi({
@@ -197,8 +235,9 @@ export function createApi({
   const wait = sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 
   async function loadDb() {
-    const stored = await store.load();
-    return stored ?? emptyDatabase();
+    const db = (await store.load()) ?? emptyDatabase();
+    ensureOrder(db);
+    return db;
   }
 
   function isAuthenticated(db) {
@@ -226,7 +265,7 @@ export function createApi({
 
   async function projectJson(db, row, milestoneRows) {
     const milestones = [];
-    for (const m of [...milestoneRows].sort(byDueThenId)) milestones.push(await milestoneJson(m));
+    for (const m of [...milestoneRows].sort(byOrderThenId)) milestones.push(await milestoneJson(m));
     const done = milestones.filter((m) => m.status === 'done').length;
     return {
       ...row,
@@ -304,7 +343,8 @@ export function createApi({
     const priority = has(data, 'priority') ? validPriority(data.priority) : 'none';
     const row = {
       id: ++db.seq.milestones, project_id: projectId, title, start_date: start, due_date: due,
-      status, priority, position: nextPosition(db, status), cost_enc: await encryptCost(cost),
+      status, priority, position: nextPosition(db, status),
+      order: db.milestones.filter((m) => m.project_id === projectId).length, cost_enc: await encryptCost(cost),
     };
     db.milestones.push(row);
     ctx.dirty = true;
@@ -322,11 +362,26 @@ export function createApi({
     validateMilestoneDates(start, due);
     const status = milestoneStatusFrom(data, row.status);
     const priority = has(data, 'priority') ? validPriority(data.priority) : row.priority ?? 'none';
+    const projectId = has(data, 'project_id') ? validProjectId(db, data.project_id) : row.project_id;
+    const order = has(data, 'order') ? validPosition(data.order, 'order') : null;
     const cost = has(data, 'cost') ? validCost(data.cost) : null;
     const costToken = has(data, 'cost') ? await encryptCost(cost) : undefined;
     if (status !== row.status) placeInColumn(db, row, status, Infinity);
     if (costToken !== undefined) row.cost_enc = costToken;
     Object.assign(row, { title, start_date: start, due_date: due, priority });
+    if (projectId !== row.project_id || order !== null) {
+      const sameProject = projectId === row.project_id;
+      placeInProject(db, row, projectId, order ?? (sameProject ? row.order : Infinity));
+    }
+    ctx.dirty = true;
+    return reply(200, await milestoneJson(row));
+  }
+
+  async function reorderMilestone(ctx, id) {
+    const order = validPosition(jsonObject(ctx.body).order, 'order');
+    const row = ctx.db.milestones.find((m) => m.id === id);
+    if (!row) return notFound('Milestone');
+    placeInProject(ctx.db, row, row.project_id, order);
     ctx.dirty = true;
     return reply(200, await milestoneJson(row));
   }
@@ -348,6 +403,7 @@ export function createApi({
     if (!row) return notFound('Milestone');
     db.milestones = db.milestones.filter((m) => m.id !== id);
     renumberColumn(db, row.status);
+    renumberProject(db, row.project_id);
     ctx.dirty = true;
     return reply(204);
   }
@@ -504,6 +560,7 @@ export function createApi({
     ['POST', /^\/projects\/(\d+)\/milestones$/, createMilestone],
     ['PATCH', /^\/milestones\/(\d+)$/, updateMilestone],
     ['POST', /^\/milestones\/(\d+)\/move$/, moveMilestone],
+    ['POST', /^\/milestones\/(\d+)\/reorder$/, reorderMilestone],
     ['DELETE', /^\/milestones\/(\d+)$/, deleteMilestone],
     ['GET', /^\/backup\/export$/, exportBackup],
     ['POST', /^\/backup\/import$/, importBackup],
@@ -603,8 +660,11 @@ export function validateBackup(file) {
         id, project_id: raw.project_id, title: validText(raw.title, 'title'), start_date: start, due_date: due,
         status: validMilestoneStatus(raw.status),
         priority: has(raw, 'priority') ? validPriority(raw.priority) : 'none', position: validPosition(raw.position), cost_enc: raw.cost_enc,
+        ...(has(raw, 'order') ? { order: validPosition(raw.order, 'order') } : {}),
       });
     }
+    ensureOrder(db);
+    for (const p of db.projects) renumberProject(db, p.id);
     const settings = data.settings ?? {};
     if (!isObject(settings)) throw backupError('settings must be an object');
     const hasHash = has(settings, 'password_hash');

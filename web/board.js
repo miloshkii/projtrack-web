@@ -40,7 +40,7 @@ function cardTooltip(m) {
   return parts.join(' · ') + priorityNote(m);
 }
 
-function renderCard(m, selectedMilestoneId, onSelect) {
+function renderCard(m, selectedMilestoneId, onSelect, onEdit) {
   const meta = h('div', { class: 'card-meta' },
     h('span', { class: 'muted', text: m.project.name }),
     h('span', { class: 'muted', text: m.due_date }));
@@ -55,6 +55,7 @@ function renderCard(m, selectedMilestoneId, onSelect) {
   const mark = priorityMark(m);
   if (mark) card.querySelector('.card-title').prepend(mark, ' ');
   card.addEventListener('click', () => onSelect(m.id, m.project.id));
+  card.addEventListener('dblclick', () => onEdit(m.id, m.project.id));
   return card;
 }
 
@@ -100,7 +101,7 @@ function wireColumn(column, body, ctx) {
 function renderColumn({ status, label }, groups, fullGroups, opts, drag) {
   const visible = groups[status];
   const body = h('div', { class: 'column-body' });
-  for (const m of visible) body.append(renderCard(m, opts.selectedMilestoneId, opts.onSelect));
+  for (const m of visible) body.append(renderCard(m, opts.selectedMilestoneId, opts.onSelect, opts.onEdit));
   if (!visible.length) body.append(h('div', { class: 'column-empty muted', text: 'drop here' }));
   const column = h('section', { class: 'column', 'data-status': status },
     h('header', { class: 'column-header' },
@@ -114,13 +115,13 @@ function renderColumn({ status, label }, groups, fullGroups, opts, drag) {
 }
 
 export function renderBoard(container, projects, {
-  filterProjectId = null, filterTag = null, selectedMilestoneId = null, onSelect = () => {}, onMove = () => {},
+  filterProjectId = null, filterTag = null, selectedMilestoneId = null, onSelect = () => {}, onEdit = () => {}, onMove = () => {},
 } = {}) {
   const groups = groupByStatus(projects, filterProjectId, filterTag);
   const fullGroups = groupByStatus(projects);
   const drag = { id: null };
   const board = h('div', { class: 'board' });
-  for (const col of COLUMNS) board.append(renderColumn(col, groups, fullGroups, { selectedMilestoneId, onSelect, onMove }, drag));
+  for (const col of COLUMNS) board.append(renderColumn(col, groups, fullGroups, { selectedMilestoneId, onSelect, onEdit, onMove }, drag));
 
   board.addEventListener('dragstart', (e) => {
     const card = e.target.closest?.('.card');
