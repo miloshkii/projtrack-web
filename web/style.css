@@ -1,13 +1,13 @@
 /* projtrack theme: Tokyo Night palette, Omarchy-style minimal panes. */
 
 :root {
-  --bg: #1a1b26;
-  --bg-alt: #16161e;
+  --bg: #121631;
+  --bg-alt: #0d1025;
   --pane: #1e2030;
   --surface: #24283b;
   --border: #3b4261;
   --fg: #c0caf5;
-  --muted: #565f89;
+  --muted: #858eba;
   --accent: #7aa2f7;
   --today: #f7768e;
   --green: #9ece6a;
@@ -15,6 +15,8 @@
   --purple: #bb9af7;
   --cyan: #7dcfff;
   --orange: #ff9e64;
+  --scrim: rgba(18, 22, 49, 0.6);
+  --accent-wash: rgba(122, 162, 247, 0.06);
   --font: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --radius: 2px;
   --gap: 8px;
@@ -296,7 +298,7 @@ button:hover {
   background: var(--bg-alt);
   border: 1px solid var(--accent);
   border-radius: var(--radius);
-  box-shadow: 0 0 0 100vmax rgba(26, 27, 38, 0.6);
+  box-shadow: 0 0 0 100vmax var(--scrim);
 }
 
 #help-overlay[hidden] {
@@ -687,7 +689,7 @@ button.topbar-ctl {
 
 .column.drag-over {
   border-color: var(--accent);
-  background: rgba(122, 162, 247, 0.06);
+  background: var(--accent-wash);
 }
 
 .column-header {
