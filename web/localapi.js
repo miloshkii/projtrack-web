@@ -126,7 +126,20 @@ function storeState(db) {
   return hasHash || hasSalt ? STORE_INCOMPLETE : STORE_EMPTY;
 }
 
-// Python's round() rounds halves to even; keep progress identical to the old server.
+const dayNumber = (iso) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86400000;
+
+// Progress is how far along the project's timeline the latest done milestone sits.
+function timelineProgress(project, milestones) {
+  const done = milestones.filter((m) => m.status === 'done');
+  if (!done.length) return 0;
+  if (done.length === milestones.length) return 100;
+  const reached = dayNumber(done.map((m) => m.due_date).sort().at(-1));
+  const start = dayNumber(project.start_date);
+  const span = dayNumber(project.target_date) - start;
+  if (span <= 0) return reached >= start ? 100 : 0;
+  return roundHalfEven(Math.min(100, Math.max(0, (100 * (reached - start)) / span)));
+}
+
 function roundHalfEven(x) {
   const floor = Math.floor(x);
   const diff = x - floor;
@@ -203,12 +216,11 @@ export function createApi({
   async function projectJson(db, row, milestoneRows) {
     const milestones = [];
     for (const m of [...milestoneRows].sort(byDueThenId)) milestones.push(await milestoneJson(m));
-    const done = milestones.filter((m) => m.done).length;
     return {
       ...row,
       milestones,
       cost_total: milestones.reduce((sum, m) => sum + (m.cost || 0), 0),
-      progress: milestones.length ? roundHalfEven((100 * done) / milestones.length) : 0,
+      progress: timelineProgress(row, milestones),
     };
   }
 
