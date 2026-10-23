@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>projtrack</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='3' width='9' height='4' rx='1' fill='%237aa2f7'/%3E%3Crect x='5' y='9' width='10' height='4' rx='1' fill='%239ece6a'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="app-name">projtrack</span>
+    <span class="key-hints">n new · m milestone · t timeline · b board · f fullscreen · ? help</span>
+    <span id="total" class="topbar-ctl" hidden><span class="muted">total</span> <span id="total-value"></span></span>
+    <button type="button" id="export-btn" class="topbar-ctl" hidden title="download a JSON backup">export</button>
+    <button type="button" id="import-btn" class="topbar-ctl" hidden title="restore from a JSON backup">import</button>
+    <input type="file" id="import-input" accept="application/json,.json" hidden>
+    <button type="button" id="password-btn" class="topbar-ctl" hidden>password</button>
+    <button type="button" id="lock-btn" class="topbar-ctl" hidden>lock</button>
+    <span id="today-date"></span>
+  </header>
+
+  <div id="auth-view" class="auth-view" hidden></div>
+
+  <main class="tiles" hidden>
+    <section class="pane" id="timeline-pane">
+      <header class="pane-header pane-tabs">
+        <button type="button" class="tab" data-view="timeline">[ timeline ]</button>
+        <button type="button" class="tab" data-view="board">[ board ]</button>
+        <select id="board-filter" aria-label="filter board by project" hidden></select>
+        <button type="button" id="fullscreen-btn" class="tab" title="fullscreen (f)" aria-label="fullscreen">[ ]</button>
+      </header>
+      <div class="pane-body" id="timeline">
+        <div class="empty-state">no projects yet. press n to create one.</div>
+      </div>
+    </section>
+
+    <section class="pane" id="detail-pane">
+      <header class="pane-header">[ project ]</header>
+      <div class="pane-body" id="detail">
+        <div class="empty-state">select a project with j / k</div>
+      </div>
+    </section>
+  </main>
+
+  <div id="help-overlay" hidden role="dialog" aria-labelledby="help-title">
+    <h2 id="help-title">[ keys ]</h2>
+    <div class="help-grid">
+      <kbd>j</kbd><span>select next project (board: next card)</span>
+      <kbd>k</kbd><span>select previous project (board: previous card)</span>
+      <kbd>h</kbd><span>board: move card to left column</span>
+      <kbd>l</kbd><span>board: move card to right column</span>
+      <kbd>t</kbd><span>timeline view</span>
+      <kbd>b</kbd><span>board view</span>
+      <kbd>f</kbd><span>toggle fullscreen</span>
+      <kbd>n</kbd><span>new project</span>
+      <kbd>m</kbd><span>new milestone</span>
+      <kbd>e</kbd><span>edit project</span>
+      <kbd>x</kbd><span>advance next milestone</span>
+      <kbd>o</kbd><span>expand / collapse milestones</span>
+      <kbd>d</kbd><span>delete</span>
+      <kbd>Tab</kbd><span>switch pane</span>
+      <kbd>Esc</kbd><span>cancel / close</span>
+      <kbd>L</kbd><span>lock (shift+l)</span>
+      <kbd>?</kbd><span>toggle help</span>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
