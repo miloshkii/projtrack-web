@@ -4,8 +4,8 @@ import { createMemoryStore } from '../web/storage.js';
 export const PASSWORD = 'correct horse';
 export const TEST_ITERATIONS = 10;
 
-export function newApp({ store = createMemoryStore() } = {}) {
-  const api = createApi({ store, iterations: TEST_ITERATIONS, failedLoginDelayMs: 0 });
+export function newApp({ store = createMemoryStore(), ...options } = {}) {
+  const api = createApi({ store, iterations: TEST_ITERATIONS, failedLoginDelayMs: 0, ...options });
   const call = (method, path, body) => api.request(method, path, body);
   return { api, store, call };
 }

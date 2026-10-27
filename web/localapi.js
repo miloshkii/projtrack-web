@@ -5,6 +5,9 @@ import {
 } from './cryptoutil.js';
 import { SAMPLE_COSTS, SAMPLE_PRIORITIES, SAMPLE_PROJECTS } from './demo.js';
 import { emptyDatabase } from './storage.js';
+import { createBudgetRoutes } from './budget/api.js';
+import { ensureBudget, reencryptBudget, validateBudgetBackup } from './budget/store.js';
+import { ValidationError } from './budget/validate.js';
 
 const STATUSES = new Set(['planned', 'active', 'paused', 'done']);
 const MILESTONE_STATUSES = ['todo', 'in_progress', 'done'];
@@ -19,8 +22,6 @@ const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const INCOMPLETE_STORE_ERROR = 'password store is incomplete; use "forgot password" to reset it';
 export const BACKUP_FORMAT = 'projtrack-backup';
 export const BACKUP_VERSION = 1;
-
-class ValidationError extends Error {}
 
 const reply = (status, body = null) => ({ status, body });
 const notFound = (what) => reply(404, { error: `${what} not found` });
@@ -236,7 +237,7 @@ function placeInProject(db, milestone, projectId, order) {
 // ---- the api ----
 
 export function createApi({
-  store, iterations = DEFAULT_ITERATIONS, failedLoginDelayMs = 500, now = () => new Date(), sleep,
+  store, iterations = DEFAULT_ITERATIONS, failedLoginDelayMs = 500, now = () => new Date(), sleep, fetchRate,
 }) {
   let key = null; // AES-GCM key; only ever in memory, so a reload locks the app
   let queue = Promise.resolve();
@@ -245,6 +246,7 @@ export function createApi({
   async function loadDb() {
     const db = (await store.load()) ?? emptyDatabase();
     ensureOrder(db);
+    ensureBudget(db);
     return db;
   }
 
@@ -472,8 +474,9 @@ export function createApi({
     return reply(204);
   }
 
-  // Re-encrypt readable costs; unreadable ones are left as they are.
+  // Re-encrypt readable costs and budget text; unreadable ones are left as they are.
   async function reencryptCosts(db, oldKey, newKey) {
+    await reencryptBudget(db.budget, oldKey, newKey);
     for (const m of db.milestones) {
       if (m.cost_enc === null) continue;
       try {
@@ -515,7 +518,7 @@ export function createApi({
     const milestones = ctx.db.milestones.map((m) => ({ ...m, priority: m.priority ?? 'none', notes: m.notes ?? '' }));
     return reply(200, {
       format: BACKUP_FORMAT, version: BACKUP_VERSION, exported_at: now().toISOString(),
-      data: { projects, milestones, settings, seq },
+      data: { projects, milestones, settings, seq, budget: structuredClone(ctx.db.budget) },
     });
   }
 
@@ -560,7 +563,10 @@ export function createApi({
 
   // ---- routing ----
 
+  const budgetRoutes = createBudgetRoutes({ getKey: () => key, now, fetchRate });
+
   const ROUTES = [
+    ...budgetRoutes,
     ['GET', /^\/projects$/, listProjects],
     ['GET', /^\/tags$/, listTags],
     ['POST', /^\/projects$/, createProject],
@@ -594,7 +600,7 @@ export function createApi({
       if (routeMethod !== method) continue;
       const ctx = { db, body, dirty: false };
       try {
-        const response = await handler(ctx, ...match.slice(1).map(Number));
+        const response = await handler(ctx, ...match.slice(1).map((part) => (/^\d+$/.test(part) ? Number(part) : part)));
         if (ctx.dirty) await store.save(ctx.db);
         return response;
       } catch (err) {
@@ -689,6 +695,7 @@ export function validateBackup(file) {
     const seq = isObject(data.seq) ? data.seq : {};
     const top = (rows, given) => Math.max(Number.isInteger(given) ? given : 0, ...rows.map((r) => r.id));
     db.seq = { projects: top(db.projects, seq.projects), milestones: top(db.milestones, seq.milestones) };
+    db.budget = validateBudgetBackup(data.budget);
     return db;
   });
 }

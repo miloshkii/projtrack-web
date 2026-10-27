@@ -81,3 +81,25 @@ export async function decryptInt(key, token) {
     throw new InvalidToken('cost cannot be decrypted');
   }
 }
+
+// Text fields (budget payees, notes, ...) use the same token format as costs. An empty string stays empty.
+export async function encryptText(key, text) {
+  if (text === '') return '';
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(IV_BYTES));
+  const sealed = new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(text)));
+  const token = new Uint8Array(iv.length + sealed.length);
+  token.set(iv);
+  token.set(sealed, iv.length);
+  return toBase64(token);
+}
+
+export async function decryptText(key, token) {
+  if (token === '') return '';
+  try {
+    const bytes = fromBase64(token);
+    const plain = await subtle.decrypt({ name: 'AES-GCM', iv: bytes.slice(0, IV_BYTES) }, key, bytes.slice(IV_BYTES));
+    return new TextDecoder('utf-8', { fatal: true }).decode(plain);
+  } catch {
+    throw new InvalidToken('text cannot be decrypted');
+  }
+}

@@ -1,8 +1,10 @@
 // Storage interface: load() resolves to the whole database object (or null when empty),
 // save(data) replaces it atomically. The database mirrors the SQLite tables.
 
+import { emptyBudget } from './budget/store.js';
+
 export function emptyDatabase() {
-  return { projects: [], milestones: [], settings: {}, seq: { projects: 0, milestones: 0 } };
+  return { projects: [], milestones: [], settings: {}, seq: { projects: 0, milestones: 0 }, budget: emptyBudget() };
 }
 
 export function createMemoryStore(initial = null) {
