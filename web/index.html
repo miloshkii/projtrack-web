@@ -10,7 +10,11 @@
 <body>
   <header class="topbar">
     <span class="app-name">projtrack</span>
-    <span class="key-hints">n new · m milestone · t timeline · b board · f fullscreen · ? help</span>
+    <nav class="section-switch topbar-ctl" aria-label="section" hidden>
+      <button type="button" class="section-tab" data-section="projects" title="projects (P)">projects</button>
+      <button type="button" class="section-tab" data-section="budget" title="budget (B)">budget</button>
+    </nav>
+    <span id="key-hints" class="key-hints"></span>
     <span id="total" class="topbar-ctl" hidden><span class="muted">total</span> <span id="total-value"></span></span>
     <button type="button" id="export-btn" class="topbar-ctl" hidden title="download a JSON backup">export</button>
     <button type="button" id="import-btn" class="topbar-ctl" hidden title="restore from a JSON backup">import</button>
@@ -44,9 +48,45 @@
     </section>
   </main>
 
+  <main id="budget-view" class="budget" hidden>
+    <section class="pane focused" id="budget-pane">
+      <header class="pane-header pane-tabs" id="budget-tabs">
+        <button type="button" class="tab" data-btab="month">[ month ]</button>
+        <button type="button" class="tab" data-btab="analytics">[ analytics ]</button>
+        <button type="button" class="tab" data-btab="subscriptions">[ subscriptions ]</button>
+        <button type="button" class="tab" data-btab="settings">[ settings ]</button>
+        <span class="month-nav">
+          <button type="button" class="tab" id="budget-prev" title="previous month (h)" aria-label="previous month">&lsaquo;</button>
+          <span id="budget-month-label"></span>
+          <button type="button" class="tab" id="budget-next" title="next month (l)" aria-label="next month">&rsaquo;</button>
+        </span>
+        <span id="budget-rates-info" class="muted"></span>
+      </header>
+      <div class="pane-body" id="budget-body"></div>
+      <footer class="budget-status"><span id="budget-status" role="status"></span></footer>
+    </section>
+  </main>
+  <dialog id="budget-dlg"></dialog>
+
   <div id="help-overlay" hidden role="dialog" aria-labelledby="help-title">
     <h2 id="help-title">[ keys ]</h2>
-    <div class="help-grid">
+    <div class="help-grid" data-help="budget" hidden>
+      <kbd>i</kbd><span>new income</span>
+      <kbd>e</kbd><span>new expense</span>
+      <kbd>s</kbd><span>new subscription</span>
+      <kbd>/</kbd><span>search expenses / subscriptions</span>
+      <kbd>h</kbd><span>previous month</span>
+      <kbd>l</kbd><span>next month</span>
+      <kbd>m</kbd><span>month tab</span>
+      <kbd>a</kbd><span>analytics tab</span>
+      <kbd>1-4</kbd><span>month, analytics, subscriptions, settings</span>
+      <kbd>B</kbd><span>budget (shift+b)</span>
+      <kbd>P</kbd><span>projects (shift+p)</span>
+      <kbd>Esc</kbd><span>close form</span>
+      <kbd>L</kbd><span>lock (shift+l)</span>
+      <kbd>?</kbd><span>toggle help</span>
+    </div>
+    <div class="help-grid" data-help="projects">
       <kbd>j</kbd><span>select next project (board: next card)</span>
       <kbd>k</kbd><span>select previous project (board: previous card)</span>
       <kbd>h</kbd><span>board: move card to left column</span>
@@ -64,6 +104,7 @@
       <kbd>d</kbd><span>delete</span>
       <kbd>Tab</kbd><span>switch pane</span>
       <kbd>Esc</kbd><span>cancel / close</span>
+      <kbd>B</kbd><span>budget (shift+b)</span>
       <kbd>L</kbd><span>lock (shift+l)</span>
       <kbd>?</kbd><span>toggle help</span>
     </div>

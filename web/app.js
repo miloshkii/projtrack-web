@@ -7,6 +7,8 @@ import { renderMarkdown } from './markdown.js';
 import { showAuthView, hideAuthView, validateNewPassword } from './auth.js';
 import { createApi } from './localapi.js';
 import { createIndexedDbStore } from './storage.js';
+import { createBudgetUi } from './budget/ui.js';
+import { createIdleLock } from './idle.js';
 
 const PALETTE_VARS = ['--accent', '--cyan', '--green', '--yellow', '--orange', '--purple', '--today'];
 const STATUSES = ['planned', 'active', 'paused', 'done'];
@@ -47,6 +49,10 @@ const PILL_LABELS = { todo: 'todo', in_progress: 'doing', done: 'done' };
 const authEl = document.getElementById('auth-view');
 const tilesEl = document.querySelector('.tiles');
 const topbarCtls = document.querySelectorAll('.topbar-ctl');
+const budgetEl = document.getElementById('budget-view');
+const totalEl = document.getElementById('total');
+const keyHintsEl = document.getElementById('key-hints');
+const sectionTabEls = document.querySelectorAll('.section-tab');
 const totalValueEl = document.getElementById('total-value');
 let locked = true;
 // Message from the last failed milestone action; shown once by the next detail render.
@@ -549,10 +555,36 @@ function passwordForm() {
 
 // ---- auth flow ----
 
+const SECTION_HINTS = {
+  projects: 'n new · m milestone · t timeline · b board · f fullscreen · B budget · ? help',
+  budget: 'i income · e expense · s subscription · h/l month · 1-4 tabs · P projects · ? help',
+};
+const SECTION_KEY = 'projtrack.section';
+let section = 'projects';
+try { if (localStorage.getItem(SECTION_KEY) === 'budget') section = 'budget'; } catch { /* storage unavailable */ }
+
+// Shows the projects or budget section (nothing while locked) and the controls that belong to it.
+function applySection() {
+  tilesEl.hidden = locked || section !== 'projects';
+  budgetEl.hidden = locked || section !== 'budget';
+  totalEl.hidden = locked || section !== 'projects';
+  keyHintsEl.textContent = SECTION_HINTS[section];
+  sectionTabEls.forEach((t) => t.classList.toggle('active', t.dataset.section === section));
+}
+
+function setSection(next) {
+  if (locked || next === section) return;
+  section = next;
+  try { localStorage.setItem(SECTION_KEY, section); } catch { /* storage unavailable */ }
+  applySection();
+  if (section === 'budget') budgetUi.open();
+  else renderLeftPane();
+}
+
 function setLockedUi(isLocked) {
   locked = isLocked;
-  tilesEl.hidden = isLocked;
   topbarCtls.forEach((c) => { c.hidden = isLocked; });
+  applySection();
 }
 
 function showLogin(configured, notice = '') {
@@ -569,6 +601,8 @@ function lockUi(notice, configured = true) {
   timelineEl.replaceChildren();
   state.fullscreen = false;
   tilesEl.classList.remove('fullscreen');
+  budgetUi.clear();
+  idleLock.stop();
   showLogin(configured, notice);
 }
 
@@ -577,10 +611,22 @@ async function lock() {
   lockUi('');
 }
 
+// ---- budget section and auto-lock ----
+
+const budgetUi = createBudgetUi({
+  api,
+  isUnauthorized: (err) => err instanceof UnauthorizedError,
+  onSettings: (settings) => idleLock.setMinutes(settings.autolock_minutes),
+});
+const idleLock = createIdleLock({ onIdle: () => lockUi('locked after being idle') });
+
 async function unlocked() {
   hideAuthView(authEl);
   setLockedUi(false);
   try {
+    const settings = section === 'budget' ? await budgetUi.open() : await api('GET', '/budget/settings');
+    if (settings) idleLock.setMinutes(settings.autolock_minutes);
+    idleLock.start();
     await refresh();
   } catch (err) {
     if (!(err instanceof UnauthorizedError)) detailEl.replaceChildren(h('div', { class: 'form-error', text: err.message }));
@@ -830,6 +876,8 @@ export const actions = {
   startEditProject, startEdit, moveMilestoneUp, moveMilestoneDown, deleteSelected, toggleExpand, cancelForm, toggleNextMilestone, refresh,
   showTimeline, showBoard, toggleFullscreen, exitFullscreen, moveCardLeft, moveCardRight,
   lock, isLocked: () => locked,
+  section: () => section, setSection,
+  budgetKey: (key) => budgetUi.handleKey(key), budgetEscape: () => budgetUi.escape(), budgetFormOpen: () => budgetUi.isFormOpen(),
 };
 export { state };
 
@@ -856,6 +904,7 @@ tagFilterEl.addEventListener('change', () => {
 });
 fullscreenBtn.addEventListener('click', toggleFullscreen);
 document.getElementById('lock-btn').addEventListener('click', lock);
+sectionTabEls.forEach((t) => t.addEventListener('click', () => setSection(t.dataset.section)));
 const importInput = document.getElementById('import-input');
 document.getElementById('export-btn').addEventListener('click', exportBackup);
 document.getElementById('import-btn').addEventListener('click', () => importInput.click());

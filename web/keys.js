@@ -9,7 +9,10 @@ export function bindKeys(actions) {
   const tiles = document.querySelector('.tiles');
   const visiblePanes = () => (tiles.classList.contains('fullscreen') ? allPanes.slice(0, 1) : allPanes);
 
-  const toggleHelp = () => { help.hidden = !help.hidden; };
+  const toggleHelp = () => {
+    for (const grid of help.querySelectorAll('[data-help]')) grid.hidden = grid.dataset.help !== actions.section();
+    help.hidden = !help.hidden;
+  };
 
   function focusNextPane() {
     const panes = visiblePanes();
@@ -20,6 +23,7 @@ export function bindKeys(actions) {
 
   function escape() {
     if (!help.hidden) help.hidden = true;
+    else if (actions.section() === 'budget') actions.budgetEscape();
     else {
       actions.exitFullscreen();
       actions.cancelForm();
@@ -47,6 +51,15 @@ export function bindKeys(actions) {
     ['x', actions.toggleNextMilestone],
     ['o', actions.toggleExpand],
     ['d', actions.deleteSelected],
+    ['B', () => actions.setSection('budget')],
+    ['L', actions.lock],
+    ['?', toggleHelp],
+  ]);
+
+  // The budget section has its own single keys; only these are shared with projects.
+  const sharedBindings = new Map([
+    ['P', () => actions.setSection('projects')],
+    ['B', () => actions.setSection('budget')],
     ['L', actions.lock],
     ['?', toggleHelp],
   ]);
@@ -60,6 +73,13 @@ export function bindKeys(actions) {
       return;
     }
     if (isTyping(e.target)) return;
+    if (actions.section() === 'budget') {
+      if (actions.budgetFormOpen()) return;
+      const shared = sharedBindings.get(e.key);
+      if (shared || actions.budgetKey(e.key)) e.preventDefault();
+      if (shared) shared();
+      return;
+    }
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
       focusNextPane();
